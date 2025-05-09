@@ -31,7 +31,7 @@ def parse_arguments():
     parser.add_argument('--response_size', type=int, default=100, help='Response size in bytes (default: 100)')
     parser.add_argument('--interval', type=int, default=1000, help='Request interval in ms (default: 1000)')
     parser.add_argument('--count', type=int, default=10, help='Number of requests to send (default: 10)')
-    parser.add_argument('--timeout', type=int, default=5, help='Socket timeout in seconds (default: 5)')
+    parser.add_argument('--timeout', type=int, default=1, help='Socket timeout in seconds (default:1)')
     
     return parser.parse_args()
 

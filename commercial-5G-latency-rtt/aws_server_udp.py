@@ -101,6 +101,14 @@ def process_chunk(data, client_address):
         print(f"Error processing chunk: {e}")
         return False, None
 
+def clear_chunk_buffer():
+    """
+    Clear the chunk buffer
+    """
+    if chunk_buffer:
+        chunk_buffer.clear()
+        print("Cleared chunk buffer")
+
 def send_response(sock, client_address, request_id, response_size):
     """
     Send response data to client
@@ -189,6 +197,9 @@ def start_udp_server(port=UDP_PORT, max_packet_size=MAX_UDP_PACKET):
                 msg_type = data[0]
                 
                 if msg_type == MSG_TYPE_CONTROL:
+                    # Clear chunk buffer when control message is received
+                    clear_chunk_buffer()
+                    
                     # Unpack control message: type(1) + request_size(4) + response_size(4)
                     _, request_size, response_size = struct.unpack('!BII', data)
                     print(f"Received control message - Request size: {request_size}, Response size: {response_size}")
