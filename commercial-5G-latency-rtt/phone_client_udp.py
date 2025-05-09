@@ -3,6 +3,7 @@ import socket
 import struct
 import time
 import random
+from collections import defaultdict
 
 # Maximum UDP packet size (practically safe)
 MAX_UDP_PACKET = 8192
@@ -15,6 +16,9 @@ MSG_TYPE_REQUEST = 2
 
 # Global request counter
 request_counter = 0
+
+# Response tracking
+response_buffer = defaultdict(dict)  # {request_id: {chunk_id: data}}
 
 def parse_arguments():
     """
@@ -75,7 +79,7 @@ def send_request(sock, server_address, request_size):
         request_size: Size of request data to send
     
     Returns:
-        bool: True if request sent successfully, False otherwise
+        tuple: (request_id, send_time) if sent successfully, (None, None) otherwise
     """
     global request_counter
     try:
@@ -90,7 +94,7 @@ def send_request(sock, server_address, request_size):
         payload_size = request_size - header_size
         if payload_size < 0:
             print(f"Error: Request size {request_size} is too small for header")
-            return False
+            return None, None
             
         # Calculate how many chunks we need
         max_chunk_payload = MAX_UDP_PACKET - header_size
@@ -98,6 +102,9 @@ def send_request(sock, server_address, request_size):
         total_chunks = max(1, total_chunks)  # At least 1 chunk
         
         print(f"Total request data length: {request_size} bytes, splitting into {total_chunks} chunks")
+        
+        # Record start time just before sending first chunk
+        send_time = time.time()
         
         # Split data into chunks and send
         remaining_payload = payload_size
@@ -118,11 +125,87 @@ def send_request(sock, server_address, request_size):
             # Update remaining payload
             remaining_payload -= this_chunk_payload
         
-        return True
+        return request_id, send_time
         
     except Exception as e:
         print(f"Error sending request: {e}")
-        return False
+        return None, None
+
+def receive_response(sock, request_id, send_time, timeout=5):
+    """
+    Wait for and process response chunks for a specific request
+    
+    Args:
+        sock: UDP socket
+        request_id: Request ID to wait for response
+        send_time: Time when the request was sent
+        timeout: Socket timeout in seconds
+    
+    Returns:
+        tuple: (bool, float) - success status and RTT in ms
+    """
+    # Set timeout for receiving response
+    original_timeout = sock.gettimeout()
+    sock.settimeout(timeout)
+    
+    response_complete = False
+    start_time = time.time()
+    received_chunks = {}  # {chunk_id: True}
+    total_chunks = None
+    
+    try:
+        while time.time() - start_time < timeout:
+            try:
+                # Receive response data
+                data, _ = sock.recvfrom(MAX_UDP_PACKET)
+                
+                # Ensure we have at least the header
+                if len(data) < 9:  # type(1) + request_id(4) + chunk_id(2) + total_chunks(2)
+                    print("Received too small response chunk")
+                    continue
+                
+                # Unpack header to get type, request ID, chunk ID and total chunks
+                msg_type, resp_request_id, chunk_id, chunks_count = struct.unpack('!BIHH', data[:9])
+                
+                if msg_type != MSG_TYPE_REQUEST:
+                    print(f"Received unexpected message type: {msg_type}")
+                    continue
+                
+                # Check if this response matches our request
+                if resp_request_id == request_id:
+                    # Record this chunk and update total chunks if needed
+                    received_chunks[chunk_id] = True
+                    if total_chunks is None:
+                        total_chunks = chunks_count
+                    print(f"Received response chunk {chunk_id+1}/{chunks_count} for request {request_id}")
+                    
+                    # Check if we have all chunks
+                    if len(received_chunks) == total_chunks:
+                        # Calculate RTT when all response chunks received
+                        receive_complete_time = time.time()
+                        rtt_ms = (receive_complete_time - send_time) * 1000  # Convert to ms
+                        print(f"Received all {total_chunks} response chunks for request {request_id}")
+                        response_complete = True
+                        break
+                else:
+                    print(f"Received response for different request: {resp_request_id}")
+            
+            except socket.timeout:
+                # Timeout on this receive, try again if within overall timeout
+                pass
+    
+    except Exception as e:
+        print(f"Error receiving response: {e}")
+    
+    finally:
+        # Restore original timeout
+        sock.settimeout(original_timeout)
+    
+    # Calculate RTT if response is complete
+    if response_complete:
+        return True, rtt_ms
+    else:
+        return False, None
 
 def main():
     """
@@ -144,17 +227,35 @@ def main():
             
         print("Connection established with server")
         
-        # Send requests
+        # Send requests and wait for responses
+        successful_requests = 0
         for i in range(args.count):
-            if not send_request(client_socket, server_address, args.request_size):
+            print(f"\nSending request {i+1}/{args.count}")
+            request_id, send_time = send_request(client_socket, server_address, args.request_size)
+            
+            if request_id is None:
                 print(f"Failed to send request {i+1}")
                 continue
                 
-            print(f"Request {i+1}/{args.count} sent")
+            # Wait for response if expected
+            if args.response_size > 0:
+                print(f"Waiting for response to request {request_id}...")
+                response_received, rtt = receive_response(client_socket, request_id, send_time, args.timeout)
+                
+                if response_received:
+                    successful_requests += 1
+                    print(f"Completed request-response cycle for request {i+1}")
+                    if rtt is not None:
+                        print(f"RTT: {rtt:.3f} ms")
+                else:
+                    print(f"Response timeout for request {i+1}")
             
-            # Wait for the specified interval
+            # Wait for the specified interval before next request
             if i < args.count - 1:  # Don't wait after the last request
+                print(f"Waiting {args.interval}ms before next request")
                 time.sleep(args.interval / 1000)  # Convert ms to seconds
+        
+        print(f"\nSuccessfully completed {successful_requests}/{args.count} request-response cycles")
         
     except KeyboardInterrupt:
         print("\nClient shutting down...")

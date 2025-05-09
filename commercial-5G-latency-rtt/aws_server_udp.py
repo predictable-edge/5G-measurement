@@ -101,6 +101,61 @@ def process_chunk(data, client_address):
         print(f"Error processing chunk: {e}")
         return False, None
 
+def send_response(sock, client_address, request_id, response_size):
+    """
+    Send response data to client
+    
+    Args:
+        sock: UDP socket
+        client_address: Client address tuple (ip, port)
+        request_id: Request ID to respond to
+        response_size: Size of response data to send
+    
+    Returns:
+        bool: True if response sent successfully, False otherwise
+    """
+    try:
+        # Calculate header size: type(1) + request_id(4) + chunk_id(2) + total_chunks(2)
+        header_size = 9
+        
+        # Calculate actual payload size
+        payload_size = response_size - header_size
+        if payload_size < 0:
+            print(f"Warning: Response size {response_size} is too small for header, adjusting")
+            payload_size = 0
+        
+        # Calculate how many chunks we need
+        max_chunk_payload = MAX_UDP_PACKET - header_size
+        total_chunks = (payload_size + max_chunk_payload - 1) // max_chunk_payload
+        total_chunks = max(1, total_chunks)  # At least 1 chunk
+        
+        print(f"Sending response for request {request_id}: {response_size} bytes in {total_chunks} chunks")
+        
+        # Split data into chunks and send
+        remaining_payload = payload_size
+        for chunk_id in range(total_chunks):
+            # Calculate this chunk's payload size
+            this_chunk_payload = min(max_chunk_payload, remaining_payload)
+            
+            # Pack the header: type(1) + request_id(4) + chunk_id(2) + total_chunks(2)
+            chunk_header = struct.pack('!BIHH', MSG_TYPE_REQUEST, request_id, chunk_id, total_chunks)
+            
+            # Create chunk data with header and payload
+            chunk_data = chunk_header + b'0' * this_chunk_payload
+            
+            # Send the chunk
+            sock.sendto(chunk_data, client_address)
+            print(f"Sent response chunk {chunk_id+1}/{total_chunks} for request {request_id}")
+            
+            # Update remaining payload
+            remaining_payload -= this_chunk_payload
+            
+        return True
+            
+    except Exception as e:
+        print(f"Error sending response: {e}")
+        return False
+
 def start_udp_server(port=UDP_PORT, max_packet_size=MAX_UDP_PACKET):
     """
     Start a UDP server that listens for incoming data
@@ -152,6 +207,14 @@ def start_udp_server(port=UDP_PORT, max_packet_size=MAX_UDP_PACKET):
                 elif msg_type == MSG_TYPE_REQUEST:
                     # Process the chunk
                     is_complete, request_id = process_chunk(data, client_address)
+                    
+                    # If request is complete and we have client config
+                    if is_complete and client_address in client_configs:
+                        response_size = client_configs[client_address]['response_size']
+                        
+                        # Send response if needed
+                        if response_size > 0:
+                            send_response(server_socket, client_address, request_id, response_size)
                 
             except (struct.error, IndexError) as e:
                 print(f"Error processing message: {e}")
