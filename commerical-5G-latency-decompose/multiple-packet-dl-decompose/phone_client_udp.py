@@ -266,7 +266,7 @@ def main():
             return
         
         # Connect to local server for data forwarding (TCP)
-        # connect_to_local_server(args.local_server_ip)
+        connect_to_local_server(args.local_server_ip)
         # Continue even if local server connection fails
         
         # Start data reception
