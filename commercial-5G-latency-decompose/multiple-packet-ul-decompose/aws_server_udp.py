@@ -20,6 +20,9 @@ time_offset = 0.0           # Global time offset between server and client
 last_sync_time = 0          # Last time we synced
 client_rtt = 0.0            # Round trip time with client
 results_file = None         # File to save results
+results_filename = None     # Filename for results
+is_file_created = False     # Flag to indicate if results file is created
+expected_bytes_size = 0     # Size of data packets for filename
 result_counter = 0          # Counter for sequential result indices
 
 # Data structures for UDP requests from phone client
@@ -27,19 +30,27 @@ pending_requests = {}       # Dictionary to track requests that are being proces
 completed_requests = {}     # Dictionary to store timing info for completed requests
 request_lock = threading.Lock()  # Lock for thread-safe access to request dictionaries
 
-def init_results_file():
+def init_results_file(payload_size):
     """Initialize the results file with headers"""
-    global results_file
+    global results_file, results_filename, is_file_created, expected_bytes_size
     
+    # Don't create the file again if it's already created
+    if is_file_created:
+        return
+        
     try:
+        # Store the payload size for future reference
+        expected_bytes_size = payload_size
+        
         # Create a timestamp for the filename
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"ul_udp_{timestamp}.txt"
+        results_filename = f"ul_udp_bytes{payload_size}_{timestamp}.txt"
         
-        results_file = open(filename, "w")
+        results_file = open(results_filename, "w")
         results_file.write(f"{'index':<6s}  {'ul_delay_ms':<12s}  {'duration_ms':<12s}  {'packet_size':<10s}  {'sync_rtt_ms':<10s}\n")
         results_file.flush()
-        print(f"Results file initialized: {filename}")
+        print(f"Results file initialized: {results_filename}")
+        is_file_created = True
     except Exception as e:
         print(f"Error initializing results file: {e}")
         results_file = None
@@ -156,7 +167,7 @@ def sync_time_with_client(client_sock, client_address):
 
 def handle_phone_udp_data():
     """Listen for UDP data from phone client and track timing information"""
-    global running, pending_requests, completed_requests, time_offset, client_rtt
+    global running, pending_requests, completed_requests, time_offset, client_rtt, is_file_created
     
     # Create UDP socket
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -187,6 +198,10 @@ def handle_phone_udp_data():
                         if len(data) >= 16:
                             try:
                                 expected_payload_size = struct.unpack('!I', data[12:16])[0]
+                                
+                                # Initialize results file if it hasn't been created yet and we have a valid payload size
+                                if not is_file_created and expected_payload_size >= 0:
+                                    init_results_file(expected_payload_size)
                             except struct.error:
                                 # If there's an error parsing, assume 0
                                 pass
@@ -391,13 +406,13 @@ def listen_for_clients():
         server_socket.close()
 
 def main():
-    global running, results_file, result_counter
+    global running, results_file, result_counter, is_file_created
     
     # Reset result counter
     result_counter = 0
     
-    # Initialize results file
-    init_results_file()
+    # File will be created on first valid packet
+    is_file_created = False
     
     # Start client listener thread (TCP)
     client_thread = threading.Thread(target=listen_for_clients)
@@ -424,7 +439,8 @@ def main():
         # Close results file
         if results_file:
             results_file.close()
-            print(f"Results file closed")
+            if results_filename:
+                print(f"Results saved to {results_filename}")
 
 if __name__ == "__main__":
     main()
