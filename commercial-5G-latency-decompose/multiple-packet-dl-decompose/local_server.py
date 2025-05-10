@@ -104,69 +104,107 @@ def handle_phone_client(client_socket, client_address):
     try:
         print(f"Phone connected from {client_address}")
         
+        # Set socket to non-blocking mode
+        client_socket.setblocking(False)
+        
+        # Track what kind of data we expect next
+        expected_data = "header"  # We first expect a header
+        
         while running:
             try:
-                # First receive the header which contains timestamp and packet size
-                # Format: !dI = 8-byte double + 4-byte unsigned int = 12 bytes total
-                header = client_socket.recv(12)
-                if not header or len(header) < 12:
-                    if not header:
-                        print("Connection closed by phone")
-                    else:
-                        print(f"Incomplete header received: {len(header)} bytes, expected 12 bytes")
+                # Try to receive data
+                data = client_socket.recv(12)
+                if not data:
+                    print("Connection closed by phone")
                     break
                 
-                # Record reception time of the header
-                header_recv_time = time.time()
+                print(f"Received data length: {len(data)}")
                 
-                # Parse the header to get timestamp and packet size
-                server_timestamp, packet_size = struct.unpack('!dI', header)
+                # Process the received data based on what we expect
+                if expected_data == "header" and len(data) == 12:
+                    # We have a complete header
+                    # Record reception time of the header
+                    header_recv_time = time.time()
+                    
+                    # Parse the header to get timestamp and packet size
+                    server_timestamp, packet_size = struct.unpack('!dI', data)
+                    
+                    # Correct the server timestamp using our time offset
+                    with phone_data_lock:
+                        corrected_server_time = server_timestamp - time_offset
+                        sync_rtt = current_sync_rtt  # Get current sync RTT value
+                    
+                    # Calculate DL transmission delay (server to phone)
+                    dl_transmission_delay = header_recv_time - corrected_server_time
+                    
+                    print(f"Header received from phone. Server timestamp: {server_timestamp:.6f}")
+                    print(f"Corrected server time: {corrected_server_time:.6f}")
+                    print(f"DL transmission delay: {dl_transmission_delay*1000:.2f} ms")
+                    print(f"Current sync RTT: {sync_rtt*1000:.2f} ms")
+                    
+                    # Now expect duration data
+                    expected_data = "duration"
                 
-                # Correct the server timestamp using our time offset
-                with phone_data_lock:
-                    corrected_server_time = server_timestamp - time_offset
-                    sync_rtt = current_sync_rtt  # Get current sync RTT value
+                elif expected_data == "header" and len(data) == 8:
+                    # We expect header but have 8 bytes (possibly duration data)
+                    # This might be an out-of-sequence duration data
+                    print("Warning: Received unexpected 8-byte data while expecting header, discarding")
+                    # Just discard and continue expecting header
+                    
+                elif expected_data == "duration" and len(data) == 8:
+                    # We have duration data
+                    # Parse the duration data
+                    duration_ms = struct.unpack('d', data)[0]
+                    
+                    # Calculate total latency
+                    total_latency_ms = dl_transmission_delay*1000 + duration_ms
+                    
+                    # Increment measurement counter
+                    measurement_count += 1
+                    
+                    # Save results to file with fixed-width format for better alignment
+                    if results_file:
+                        with phone_data_lock:  # Use lock to avoid file corruption
+                            results_file.write(f"{measurement_count:<6d}  {dl_transmission_delay*1000:<12.2f}  {duration_ms:<12.2f}  {total_latency_ms:<12.2f}  {packet_size:<10d}  {sync_rtt*1000:<10.2f}\n")
+                            results_file.flush()  # Ensure data is written to disk
+                    
+                    print(f"Packet reception duration on phone: {duration_ms:.2f} ms")
+                    print(f"Total observed latency: {total_latency_ms:.2f} ms")
+                    print(f"Saved measurement #{measurement_count} to file")
+                    print("-" * 50)
+                    
+                    # Now expect a new header
+                    expected_data = "header"
                 
-                # Calculate DL transmission delay (server to phone)
-                dl_transmission_delay = header_recv_time - corrected_server_time
+                elif expected_data == "duration" and len(data) == 12:
+                    # We didn't get duration data, but we got another header
+                    # This means the phone skipped sending duration
+                    print("Warning: Missing duration data, received new header instead")
+                    
+                    # Process this as a header
+                    header_recv_time = time.time()
+                    server_timestamp, packet_size = struct.unpack('!dI', data)
+                    
+                    with phone_data_lock:
+                        corrected_server_time = server_timestamp - time_offset
+                        sync_rtt = current_sync_rtt
+                    
+                    dl_transmission_delay = header_recv_time - corrected_server_time
+                    
+                    print(f"Header received from phone. Server timestamp: {server_timestamp:.6f}")
+                    print(f"Corrected server time: {corrected_server_time:.6f}")
+                    print(f"DL transmission delay: {dl_transmission_delay*1000:.2f} ms")
+                    print(f"Current sync RTT: {sync_rtt*1000:.2f} ms")
+                    
+                    # Continue expecting duration data for this new header
+                    expected_data = "duration"
                 
-                print(f"Header received from phone. Server timestamp: {server_timestamp:.6f}")
-                print(f"Corrected server time: {corrected_server_time:.6f}")
-                print(f"DL transmission delay: {dl_transmission_delay*1000:.2f} ms")
-                print(f"Current sync RTT: {sync_rtt*1000:.2f} ms")
-                
-                # Next, wait for the duration data
-                # Duration is sent as a double (8 bytes)
-                duration_data = client_socket.recv(8)
-                if not duration_data or len(duration_data) < 8:
-                    if not duration_data:
-                        print("Connection closed by phone before receiving duration")
-                    else:
-                        print(f"Incomplete duration data: {len(duration_data)} bytes, expected 8 bytes")
-                    break
-                
-                # Parse the duration data
-                duration_ms = struct.unpack('d', duration_data)[0]
-                
-                # Calculate total latency
-                total_latency_ms = dl_transmission_delay*1000 + duration_ms
-                
-                # Increment measurement counter
-                measurement_count += 1
-                
-                # Save results to file with fixed-width format for better alignment
-                if results_file:
-                    with phone_data_lock:  # Use lock to avoid file corruption
-                        results_file.write(f"{measurement_count:<6d}  {dl_transmission_delay*1000:<12.2f}  {duration_ms:<12.2f}  {total_latency_ms:<12.2f}  {packet_size:<10d}  {sync_rtt*1000:<10.2f}\n")
-                        results_file.flush()  # Ensure data is written to disk
-                
-                print(f"Packet reception duration on phone: {duration_ms:.2f} ms")
-                print(f"Total observed latency: {total_latency_ms:.2f} ms")
-                print(f"Saved measurement #{measurement_count} to file")
-                print("-" * 50)
-                
-            except socket.timeout:
-                # Socket timeout, just continue the loop
+                else:
+                    print(f"Received data with unexpected length: {len(data)} bytes while expecting {expected_data}")
+                    
+            except BlockingIOError:
+                # No data available, just wait
+                time.sleep(0.01)
                 continue
             except Exception as e:
                 print(f"Error receiving data: {e}")
