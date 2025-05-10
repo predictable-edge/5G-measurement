@@ -9,6 +9,9 @@ from collections import defaultdict
 MAX_UDP_PACKET = 8192
 # UDP port for data communication
 UDP_PORT = 5000
+# Local server TCP connection
+LOCAL_SERVER_IP = '127.0.0.1'
+LOCAL_SERVER_PORT = 5001
 
 # Message types
 MSG_TYPE_CONTROL = 1
@@ -19,6 +22,9 @@ request_counter = 0
 
 # Response tracking
 response_buffer = defaultdict(dict)  # {request_id: {chunk_id: data}}
+
+# Local server connection
+local_server_socket = None
 
 def parse_arguments():
     """
@@ -32,8 +38,65 @@ def parse_arguments():
     parser.add_argument('--interval', type=int, default=1000, help='Request interval in ms (default: 1000)')
     parser.add_argument('--count', type=int, default=10, help='Number of requests to send (default: 10)')
     parser.add_argument('--timeout', type=int, default=1, help='Socket timeout in seconds (default:1)')
+    parser.add_argument('--local_server', type=str, default=LOCAL_SERVER_IP, help=f'Local server IP address (default: {LOCAL_SERVER_IP})')
+    parser.add_argument('--local_port', type=int, default=LOCAL_SERVER_PORT, help=f'Local server port (default: {LOCAL_SERVER_PORT})')
+    parser.add_argument('--no_local_server', action='store_true', help='Disable local server connection')
     
     return parser.parse_args()
+
+def connect_to_local_server(server_ip, server_port):
+    """
+    Connect to local server via TCP
+    
+    Args:
+        server_ip: Local server IP address
+        server_port: Local server port
+    
+    Returns:
+        socket: Connected socket or None if failed
+    """
+    try:
+        # Create TCP socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Disable Nagle algorithm
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        # Set timeout
+        sock.settimeout(5)
+        # Connect to server
+        sock.connect((server_ip, server_port))
+        print(f"Connected to local server at {server_ip}:{server_port}")
+        return sock
+    except Exception as e:
+        print(f"Failed to connect to local server: {e}")
+        return None
+
+def send_rtt_to_local_server(request_id, rtt_ms, request_size, response_size):
+    """
+    Send RTT measurement to local server
+    
+    Args:
+        request_id: Request ID
+        rtt_ms: RTT in milliseconds
+        request_size: Size of request in bytes
+        response_size: Size of response in bytes
+    
+    Returns:
+        bool: True if sent successfully, False otherwise
+    """
+    global local_server_socket
+    
+    if local_server_socket is None:
+        return False
+    
+    try:
+        # Pack data: request_id(4) + rtt(8) + request_size(4) + response_size(4) = 20 bytes
+        data = struct.pack('!IdII', request_id, rtt_ms, request_size, response_size)
+        local_server_socket.sendall(data)
+        return True
+    except Exception as e:
+        print(f"Error sending RTT to local server: {e}")
+        local_server_socket = None
+        return False
 
 def send_control_message(sock, server_address, request_size, response_size):
     """
@@ -211,7 +274,13 @@ def main():
     """
     Main function to start the client
     """
+    global local_server_socket
+    
     args = parse_arguments()
+    
+    # Connect to local server if requested
+    if not args.no_local_server:
+        local_server_socket = connect_to_local_server(args.local_server, args.local_port)
     
     # Create UDP socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -247,6 +316,12 @@ def main():
                     print(f"Completed request-response cycle for request {i+1}")
                     if rtt is not None:
                         print(f"RTT: {rtt:.3f} ms")
+                        # Send RTT to local server
+                        if local_server_socket:
+                            if send_rtt_to_local_server(request_id, rtt, args.request_size, args.response_size):
+                                print(f"Sent RTT data to local server for request {request_id}")
+                            else:
+                                print(f"Failed to send RTT data to local server for request {request_id}")
                 else:
                     print(f"Response timeout for request {i+1}")
             
@@ -260,6 +335,9 @@ def main():
     except KeyboardInterrupt:
         print("\nClient shutting down...")
     finally:
+        # Close sockets
+        if local_server_socket:
+            local_server_socket.close()
         client_socket.close()
 
 if __name__ == "__main__":
