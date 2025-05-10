@@ -21,6 +21,8 @@ phone_data_lock = threading.Lock()  # Lock for thread-safe updates to data
 running = True                  # Flag to control thread execution
 measurement_count = 0           # Counter for received packets
 results_file = None             # File to save measurement results
+results_filename = None         # Filename for results
+is_file_created = False         # Flag to indicate if results file is created
 current_sync_rtt = 0.0          # Current RTT with AWS time server
 
 def connect_to_aws_time_server(aws_server_ip):
@@ -99,7 +101,7 @@ def sync_with_aws_server(aws_server_ip):
 
 def handle_phone_client(client_socket, client_address):
     """Handle a phone client connection"""
-    global measurement_count, results_file, current_sync_rtt
+    global measurement_count, results_file, current_sync_rtt, is_file_created, results_filename
     
     try:
         print(f"Phone connected from {client_address}")
@@ -128,6 +130,11 @@ def handle_phone_client(client_socket, client_address):
                     
                     # Parse the header to get timestamp and packet size
                     server_timestamp, packet_size = struct.unpack('!dI', data)
+                    
+                    # Create results file if this is the first packet with valid size
+                    if not is_file_created and packet_size > 0:
+                        create_results_file(packet_size)
+                        is_file_created = True
                     
                     # Correct the server timestamp using our time offset
                     with phone_data_lock:
@@ -256,6 +263,23 @@ def listen_for_phone():
         phone_socket.close()
         print("Phone listener shut down")
 
+def create_results_file(packet_size):
+    """Create results file with packet size in the filename"""
+    global results_file, results_filename
+    
+    # Create timestamp for filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create results file with packet size in the filename
+    results_filename = f"udp_latency_bytes{packet_size}_{timestamp}.txt"
+    results_file = open(results_filename, "w")
+    
+    # Write header to results file with fixed-width format
+    results_file.write(f"{'index':<6s}  {'dl_delay_ms':<12s}  {'duration_ms':<12s}  {'total_ms':<12s}  {'packet_size':<10s}  {'sync_rtt_ms':<10s}\n")
+    results_file.write("-" * 70 + "\n")
+    
+    print(f"Saving results to {results_filename}")
+
 def main():
     global aws_time_socket, running, results_file
     
@@ -270,19 +294,6 @@ def main():
     # Update sync interval if specified
     global TIME_SYNC_INTERVAL
     TIME_SYNC_INTERVAL = args.interval
-    
-    # Create timestamp for filename
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Create results file
-    results_filename = f"udp_latency_{timestamp}.txt"
-    results_file = open(results_filename, "w")
-    
-    # Write header to results file with fixed-width format
-    results_file.write(f"{'index':<6s}  {'dl_delay_ms':<12s}  {'duration_ms':<12s}  {'total_ms':<12s}  {'packet_size':<10s}  {'sync_rtt_ms':<10s}\n")
-    results_file.write("-" * 70 + "\n")
-    
-    print(f"Saving results to {results_filename}")
     
     try:
         # Connect to AWS server for time synchronization
@@ -322,7 +333,8 @@ def main():
         # Close results file
         if results_file:
             results_file.close()
-            print(f"Results saved to {results_filename}")
+            if results_filename:
+                print(f"Results saved to {results_filename}")
 
 if __name__ == "__main__":
     main()
