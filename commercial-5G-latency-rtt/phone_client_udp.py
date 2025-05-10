@@ -37,7 +37,7 @@ def parse_arguments():
     parser.add_argument('--response_size', type=int, default=100, help='Response size in bytes (default: 100)')
     parser.add_argument('--interval', type=int, default=1000, help='Request interval in ms (default: 1000)')
     parser.add_argument('--count', type=int, default=10, help='Number of requests to send (default: 10)')
-    parser.add_argument('--timeout', type=int, default=1, help='Socket timeout in seconds (default:1)')
+    parser.add_argument('--timeout', type=int, default=1000, help='Socket timeout in ms (default: 1000)')
     parser.add_argument('--local_server', type=str, default=LOCAL_SERVER_IP, help=f'Local server IP address (default: {LOCAL_SERVER_IP})')
     parser.add_argument('--local_port', type=int, default=LOCAL_SERVER_PORT, help=f'Local server port (default: {LOCAL_SERVER_PORT})')
     parser.add_argument('--no_local_server', action='store_true', help='Disable local server connection')
@@ -194,7 +194,7 @@ def send_request(sock, server_address, request_size):
         print(f"Error sending request: {e}")
         return None, None
 
-def receive_response(sock, request_id, send_time, timeout=5):
+def receive_response(sock, request_id, send_time, timeout_ms=5000):
     """
     Wait for and process response chunks for a specific request
     
@@ -202,14 +202,14 @@ def receive_response(sock, request_id, send_time, timeout=5):
         sock: UDP socket
         request_id: Request ID to wait for response
         send_time: Time when the request was sent
-        timeout: Socket timeout in seconds
+        timeout_ms: Socket timeout in milliseconds
     
     Returns:
         tuple: (bool, float) - success status and RTT in ms
     """
     # Set timeout for receiving response
     original_timeout = sock.gettimeout()
-    sock.settimeout(timeout)
+    sock.settimeout(timeout_ms / 1000)  # Convert ms to seconds
     
     response_complete = False
     start_time = time.time()
@@ -217,7 +217,7 @@ def receive_response(sock, request_id, send_time, timeout=5):
     total_chunks = None
     
     try:
-        while time.time() - start_time < timeout:
+        while time.time() - start_time < timeout_ms / 1000:  # Convert ms to seconds
             try:
                 # Receive response data
                 data, _ = sock.recvfrom(MAX_UDP_PACKET)
@@ -284,7 +284,7 @@ def main():
     
     # Create UDP socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    client_socket.settimeout(args.timeout)
+    client_socket.settimeout(args.timeout / 1000)  # Convert ms to seconds
     
     server_address = (args.server_ip, args.server_port)
     
