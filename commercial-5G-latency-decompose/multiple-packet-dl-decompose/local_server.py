@@ -132,7 +132,7 @@ def handle_phone_client(client_socket, client_address):
                     server_timestamp, packet_size = struct.unpack('!dI', data)
                     
                     # Create results file if this is the first packet with valid size
-                    if not is_file_created and packet_size > 0:
+                    if not is_file_created and packet_size >= 0:
                         create_results_file(packet_size)
                         is_file_created = True
                     
@@ -198,6 +198,7 @@ def handle_phone_client(client_socket, client_address):
                     
                     dl_transmission_delay = header_recv_time - corrected_server_time
                     
+                    print(f"Time difference: {header_recv_time - server_timestamp}")
                     print(f"Header received from phone. Server timestamp: {server_timestamp:.6f}")
                     print(f"Corrected server time: {corrected_server_time:.6f}")
                     print(f"DL transmission delay: {dl_transmission_delay*1000:.2f} ms")

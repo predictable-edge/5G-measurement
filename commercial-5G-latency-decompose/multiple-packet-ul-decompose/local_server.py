@@ -196,7 +196,7 @@ def listen_for_phone_clients():
         phone_server_socket.close()
 
 def main():
-    global aws_time_socket, running, num_requests, bytes_per_request
+    global aws_time_socket, running, num_requests, bytes_per_request, PACKET_INTERVAL
     
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Time synchronization client for AWS server')
@@ -206,11 +206,15 @@ def main():
                         help='Number of requests to send to phone client (default: 10)')
     parser.add_argument('--bytes', type=int, default=1,
                         help='Size in bytes (for information only, no payload is sent)')
+    parser.add_argument('--interval', type=int, default=1000,
+                        help='Interval between packets in milliseconds (default: 1000)')
     args = parser.parse_args()
     
     # Update request parameters
     num_requests = args.requests
     bytes_per_request = args.bytes
+    # Convert interval from milliseconds to seconds
+    PACKET_INTERVAL = args.interval / 1000.0
     
     try:
         # Start thread to maintain AWS server connection
