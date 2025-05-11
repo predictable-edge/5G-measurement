@@ -115,7 +115,7 @@ def handle_phone_client(client_socket, client_address):
         while running:
             try:
                 # Try to receive data
-                data = client_socket.recv(12)
+                data = client_socket.recv(20)  # Now expect 20 bytes instead of 12
                 if not data:
                     print("Connection closed by phone")
                     break
@@ -123,13 +123,16 @@ def handle_phone_client(client_socket, client_address):
                 print(f"Received data length: {len(data)}")
                 
                 # Process the received data based on what we expect
-                if expected_data == "header" and len(data) == 12:
+                if expected_data == "header" and len(data) == 20:  # Changed from 12 to 20
                     # We have a complete header
                     # Record reception time of the header
                     header_recv_time = time.time()
                     
-                    # Parse the header to get timestamp and packet size
-                    server_timestamp, packet_size = struct.unpack('!dI', data)
+                    # Parse the header to get timestamp, packet size, and phone time difference
+                    server_timestamp, packet_size, phone_time_diff_ms = struct.unpack('!dId', data)
+                    
+                    # Calculate local time difference
+                    local_time_diff_ms = (header_recv_time - server_timestamp) * 1000
                     
                     # Create results file if this is the first packet with valid size
                     if not is_file_created and packet_size >= 0:
@@ -147,6 +150,8 @@ def handle_phone_client(client_socket, client_address):
                     print(f"Header received from phone. Server timestamp: {server_timestamp:.6f}")
                     print(f"Corrected server time: {corrected_server_time:.6f}")
                     print(f"DL transmission delay: {dl_transmission_delay*1000:.2f} ms")
+                    print(f"Phone time difference: {phone_time_diff_ms:.2f} ms")
+                    print(f"Local time difference: {local_time_diff_ms:.2f} ms")
                     print(f"Current sync RTT: {sync_rtt*1000:.2f} ms")
                     
                     # Now expect duration data
@@ -172,7 +177,7 @@ def handle_phone_client(client_socket, client_address):
                     # Save results to file with fixed-width format for better alignment
                     if results_file:
                         with phone_data_lock:  # Use lock to avoid file corruption
-                            results_file.write(f"{measurement_count:<6d}  {dl_transmission_delay*1000:<12.2f}  {duration_ms:<12.2f}  {total_latency_ms:<12.2f}  {packet_size:<10d}  {sync_rtt*1000:<10.2f}\n")
+                            results_file.write(f"{measurement_count:<6d}  {dl_transmission_delay*1000:<12.2f}  {phone_time_diff_ms:<14.2f}  {local_time_diff_ms:<14.2f}  {duration_ms:<12.2f}  {total_latency_ms:<12.2f}  {packet_size:<10d}  {sync_rtt*1000:<10.2f}\n")
                             results_file.flush()  # Ensure data is written to disk
                     
                     print(f"Packet reception duration on phone: {duration_ms:.2f} ms")
@@ -183,14 +188,17 @@ def handle_phone_client(client_socket, client_address):
                     # Now expect a new header
                     expected_data = "header"
                 
-                elif expected_data == "duration" and len(data) == 12:
+                elif expected_data == "duration" and len(data) == 20:  # Changed from 12 to 20
                     # We didn't get duration data, but we got another header
                     # This means the phone skipped sending duration
                     print("Warning: Missing duration data, received new header instead")
                     
                     # Process this as a header
                     header_recv_time = time.time()
-                    server_timestamp, packet_size = struct.unpack('!dI', data)
+                    server_timestamp, packet_size, phone_time_diff_ms = struct.unpack('!dId', data)
+                    
+                    # Calculate local time difference
+                    local_time_diff_ms = (header_recv_time - server_timestamp) * 1000
                     
                     with phone_data_lock:
                         corrected_server_time = server_timestamp - time_offset
@@ -202,11 +210,13 @@ def handle_phone_client(client_socket, client_address):
                     print(f"Header received from phone. Server timestamp: {server_timestamp:.6f}")
                     print(f"Corrected server time: {corrected_server_time:.6f}")
                     print(f"DL transmission delay: {dl_transmission_delay*1000:.2f} ms")
+                    print(f"Phone time difference: {phone_time_diff_ms:.2f} ms") 
+                    print(f"Local time difference: {local_time_diff_ms:.2f} ms")
                     print(f"Current sync RTT: {sync_rtt*1000:.2f} ms")
                     
                     # Continue expecting duration data for this new header
                     expected_data = "duration"
-                
+                    
                 else:
                     print(f"Received data with unexpected length: {len(data)} bytes while expecting {expected_data}")
                     
@@ -242,6 +252,8 @@ def listen_for_phone():
             try:
                 # Accept new connection
                 client_socket, client_address = phone_socket.accept()
+                # Explicitly disable Nagle algorithm for the client socket too
+                client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 
                 # Start a new thread to handle this client
                 client_thread = threading.Thread(
@@ -276,8 +288,8 @@ def create_results_file(packet_size):
     results_file = open(results_filename, "w")
     
     # Write header to results file with fixed-width format
-    results_file.write(f"{'index':<6s}  {'dl_delay_ms':<12s}  {'duration_ms':<12s}  {'total_ms':<12s}  {'packet_size':<10s}  {'sync_rtt_ms':<10s}\n")
-    results_file.write("-" * 70 + "\n")
+    results_file.write(f"{'index':<6s}  {'dl_delay_ms':<12s}  {'phone_diff_ms':<14s}  {'local_diff_ms':<14s}  {'duration_ms':<12s}  {'total_ms':<12s}  {'packet_size':<10s}  {'sync_rtt_ms':<10s}\n")
+    results_file.write("-" * 90 + "\n")
     
     print(f"Saving results to {results_filename}")
 

@@ -149,10 +149,13 @@ def receive_data_from_server_udp(aws_server_address, num_requests, interval_ms, 
                 # Forward header to local server
                 if local_server_socket:
                     try:
-                        # Reformat header for local server (which expects 12 bytes: timestamp and size)
-                        local_header = struct.pack('!dI', server_timestamp, packet_size)
+                        # Calculate time difference in ms
+                        time_diff_ms = (receive_time - server_timestamp) * 1000
+                        
+                        # Reformat header for local server (which now expects 20 bytes: timestamp, size, and time diff)
+                        local_header = struct.pack('!dId', server_timestamp, packet_size, time_diff_ms)
                         local_server_socket.sendall(local_header)
-                        print(f"Forwarded header to local server: {len(local_header)} bytes")
+                        print(f"Forwarded header to local server: {len(local_header)} bytes (including time diff: {time_diff_ms:.2f} ms)")
                     except Exception as e:
                         print(f"Error forwarding header to local server: {e}")
                 
