@@ -106,8 +106,10 @@ def handle_phone_client(client_socket, client_address):
     try:
         print(f"Phone connected from {client_address}")
         
-        # Set socket to non-blocking mode
+        # Set socket to non-blocking mode with minimal read delay
         client_socket.setblocking(False)
+        # Reduce the poll delay to minimize latency
+        poll_delay = 0.001  # 1ms polling interval
         
         # Track what kind of data we expect next
         expected_data = "header"  # We first expect a header
@@ -115,18 +117,22 @@ def handle_phone_client(client_socket, client_address):
         while running:
             try:
                 # Try to receive data
+                start_recv = time.time()
                 data = client_socket.recv(20)  # Now expect 20 bytes instead of 12
+                end_recv = time.time()
                 if not data:
                     print("Connection closed by phone")
                     break
                 
-                print(f"Received data length: {len(data)}")
+                recv_delay = (end_recv - start_recv) * 1000
+                print(f"Received data length: {len(data)}, recv delay: {recv_delay:.3f} ms")
                 
                 # Process the received data based on what we expect
                 if expected_data == "header" and len(data) == 20:  # Changed from 12 to 20
                     # We have a complete header
                     # Record reception time of the header
                     header_recv_time = time.time()
+                    print(f"header_recv_time: {header_recv_time}")
                     
                     # Parse the header to get timestamp, packet size, and phone time difference
                     server_timestamp, packet_size, phone_time_diff_ms = struct.unpack('!dId', data)
@@ -221,8 +227,8 @@ def handle_phone_client(client_socket, client_address):
                     print(f"Received data with unexpected length: {len(data)} bytes while expecting {expected_data}")
                     
             except BlockingIOError:
-                # No data available, just wait
-                time.sleep(0.01)
+                # No data available, just wait a short time
+                time.sleep(poll_delay)
                 continue
             except Exception as e:
                 print(f"Error receiving data: {e}")
@@ -254,6 +260,21 @@ def listen_for_phone():
                 client_socket, client_address = phone_socket.accept()
                 # Explicitly disable Nagle algorithm for the client socket too
                 client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                # Enable TCP_QUICKACK for Linux systems
+                try:
+                    client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+                except AttributeError:
+                    # TCP_QUICKACK not available on all platforms
+                    pass
+                
+                # Set small buffer sizes to reduce latency
+                try:
+                    # Use smaller TCP buffer to reduce latency (8KB)
+                    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192)
+                    cur_rcvbuf = client_socket.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+                    print(f"TCP receive buffer size set to: {cur_rcvbuf} bytes")
+                except Exception as e:
+                    print(f"Could not set TCP buffer size: {e}")
                 
                 # Start a new thread to handle this client
                 client_thread = threading.Thread(
