@@ -108,8 +108,6 @@ def handle_phone_client(client_socket, client_address):
         
         # Set socket to non-blocking mode with minimal read delay
         client_socket.setblocking(False)
-        # Reduce the poll delay to minimize latency
-        poll_delay = 0.001  # 1ms polling interval
         
         # Track what kind of data we expect next
         expected_data = "header"  # We first expect a header
@@ -227,8 +225,6 @@ def handle_phone_client(client_socket, client_address):
                     print(f"Received data with unexpected length: {len(data)} bytes while expecting {expected_data}")
                     
             except BlockingIOError:
-                # No data available, just wait a short time
-                time.sleep(poll_delay)
                 continue
             except Exception as e:
                 print(f"Error receiving data: {e}")
