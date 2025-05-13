@@ -80,20 +80,24 @@ def connect_to_local_server(local_ip):
         local_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Disable Nagle algorithm
         local_server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+        # The configuration below is not working for iSH on iOS.
+
         # Enable TCP_QUICKACK for Linux systems
-        try:
-            local_server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
-        except AttributeError:
-            # TCP_QUICKACK not available on all platforms
-            pass
-        # Set small buffer sizes to reduce latency
-        try:
-            # Use smaller TCP buffer to reduce latency (8KB)
-            local_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8192)
-            cur_sndbuf = local_server_socket.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF)
-            print(f"TCP send buffer size set to: {cur_sndbuf} bytes")
-        except Exception as e:
-            print(f"Could not set TCP buffer size: {e}")
+        # try:
+        #     local_server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+        # except AttributeError:
+        #     # TCP_QUICKACK not available on all platforms
+        #     pass
+        # # Set small buffer sizes to reduce latency
+        # try:
+        #     # Use smaller TCP buffer to reduce latency (8KB)
+        #     local_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8192)
+        #     cur_sndbuf = local_server_socket.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF)
+        #     print(f"TCP send buffer size set to: {cur_sndbuf} bytes")
+        # except Exception as e:
+        #     print(f"Could not set TCP buffer size: {e}")
+        # local_server_socket.settimeout(5)
             
         local_server_socket.connect((local_ip, LOCAL_SERVER_PORT))
         print(f"Connected to local server at {local_ip}:{LOCAL_SERVER_PORT}")
