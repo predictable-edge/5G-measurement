@@ -6,58 +6,58 @@ import threading
 import argparse
 
 # Configuration
-AWS_SERVER_IP_PORT = 5000       # Port for timestamp service
-TIME_SYNC_INTERVAL = 1          # Sync time with AWS server every second
+CLOUD_SERVER_IP_PORT = 5000       # Port for timestamp service
+TIME_SYNC_INTERVAL = 1          # Sync time with cloud server every second
 
 # Global variables
-time_offset = 0.0               # Time difference between client and AWS server
-last_sync_time = 0              # Last time we synced with AWS server
-aws_time_socket = None          # TCP connection to AWS server for time sync
+time_offset = 0.0               # Time difference between client and cloud server
+last_sync_time = 0              # Last time we synced with cloud server
+cloud_time_socket = None          # TCP connection to cloud server for time sync
 lock = threading.Lock()         # Lock for thread-safe updates to data
 running = True                  # Flag to control thread execution
-current_sync_rtt = 0.0          # Current RTT with AWS time server
+current_sync_rtt = 0.0          # Current RTT with cloud time server
 
-def connect_to_aws_time_server(aws_server_ip):
-    """Establish TCP connection to AWS server for time synchronization"""
-    global aws_time_socket
+def connect_to_cloud_time_server(cloud_server_ip):
+    """Establish TCP connection to cloud server for time synchronization"""
+    global cloud_time_socket
     
     while True:
         try:
             # Create TCP socket
-            aws_time_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            cloud_time_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # Disable Nagle algorithm
-            aws_time_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            aws_time_socket.connect((aws_server_ip, AWS_SERVER_IP_PORT))
-            print(f"Connected to AWS time server at {aws_server_ip}:{AWS_SERVER_IP_PORT}")
+            cloud_time_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            cloud_time_socket.connect((cloud_server_ip, CLOUD_SERVER_IP_PORT))
+            print(f"Connected to cloud time server at {cloud_server_ip}:{CLOUD_SERVER_IP_PORT}")
             return
         except Exception as e:
-            print(f"Failed to connect to AWS time server: {e}")
+            print(f"Failed to connect to cloud time server: {e}")
             print("Retrying in 5 seconds...")
             time.sleep(5)
 
-def sync_with_aws_server(aws_server_ip):
-    """Periodically sync time with AWS server"""
-    global time_offset, last_sync_time, aws_time_socket, running, current_sync_rtt
+def sync_with_cloud_server(cloud_server_ip):
+    """Periodically sync time with cloud server"""
+    global time_offset, last_sync_time, cloud_time_socket, running, current_sync_rtt
     
     while running:
         try:
             # Ensure we have a connection
-            if aws_time_socket is None:
-                connect_to_aws_time_server(aws_server_ip)
+            if cloud_time_socket is None:
+                connect_to_cloud_time_server(cloud_server_ip)
                 
             send_time = time.time()
             
-            # Send empty packet as request to AWS server
-            aws_time_socket.sendall(b'x')  # Send a single byte as request
+            # Send empty packet as request to cloud server
+            cloud_time_socket.sendall(b'x')  # Send a single byte as request
             
-            # Receive response from AWS server
-            data = aws_time_socket.recv(1024)
+            # Receive response from cloud server
+            data = cloud_time_socket.recv(1024)
             if not data:
                 # Connection closed, try to reconnect
-                print("AWS server connection closed, reconnecting...")
-                aws_time_socket.close()
-                aws_time_socket = None
-                connect_to_aws_time_server(aws_server_ip)
+                print("Cloud server connection closed, reconnecting...")
+                cloud_time_socket.close()
+                cloud_time_socket = None
+                connect_to_cloud_time_server(cloud_server_ip)
                 continue
                 
             receive_time = time.time()
@@ -78,34 +78,34 @@ def sync_with_aws_server(aws_server_ip):
                 last_sync_time = time.time()
                 current_sync_rtt = rtt  # Store the latest RTT value
                 
-            print(f"Synced with AWS server - Offset: {offset:.6f}s, RTT: {rtt*1000:.2f}ms")
+            print(f"Synced with cloud server - Offset: {offset:.6f}s, RTT: {rtt*1000:.2f}ms")
             
             # Wait for next sync interval
             time.sleep(TIME_SYNC_INTERVAL)
             
         except Exception as e:
-            print(f"Error syncing with AWS server: {e}")
+            print(f"Error syncing with cloud server: {e}")
             # Close socket and try to reconnect next time
-            if aws_time_socket:
-                aws_time_socket.close()
-                aws_time_socket = None
+            if cloud_time_socket:
+                cloud_time_socket.close()
+                cloud_time_socket = None
             time.sleep(1)  # Wait before retrying
 
 
 
 def get_synchronized_time():
-    """Returns the current time synchronized with the AWS server."""
+    """Returns the current time synchronized with the cloud server."""
     with lock:
         current_offset = time_offset
     return time.time() - current_offset
 
 def main():
-    global aws_time_socket, running
+    global cloud_time_socket, running
     
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Time synchronization client for AWS server')
-    parser.add_argument('--aws-ip', dest='aws_server_ip', required=True,
-                        help='IP address of the AWS server')
+    parser = argparse.ArgumentParser(description='Time synchronization client for cloud server')
+    parser.add_argument('--cloud-ip', dest='cloud_server_ip', required=True,
+                        help='IP address of the cloud server')
     parser.add_argument('--interval', type=float, default=1.0,
                         help='Time sync interval in seconds (default: 1.0)')
     args = parser.parse_args()
@@ -115,16 +115,16 @@ def main():
     TIME_SYNC_INTERVAL = args.interval
     
     try:
-        # Connect to AWS server for time synchronization
-        connect_to_aws_time_server(args.aws_server_ip)
+        # Connect to cloud server for time synchronization
+        connect_to_cloud_time_server(args.cloud_server_ip)
         
-        # Start thread for AWS server time sync
-        aws_sync_thread = threading.Thread(
-            target=sync_with_aws_server, 
-            args=(args.aws_server_ip,), 
+        # Start thread for cloud server time sync
+        cloud_sync_thread = threading.Thread(
+            target=sync_with_cloud_server, 
+            args=(args.cloud_server_ip,), 
             daemon=True
         )
-        aws_sync_thread.start()
+        cloud_sync_thread.start()
         
         print(f"Time sync client running with interval {TIME_SYNC_INTERVAL}s")
         print("Press Ctrl+C to exit")
@@ -141,8 +141,8 @@ def main():
             running = False
     finally:
         # Close connections
-        if aws_time_socket:
-            aws_time_socket.close()
+        if cloud_time_socket:
+            cloud_time_socket.close()
 
 if __name__ == "__main__":
     main()
