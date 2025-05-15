@@ -644,6 +644,18 @@ def main():
         parser.error("--mobile-ip is required. Please specify the IP address of your mobile interface.\n"
                     "Use --list-interfaces to see available network interfaces.")
     
+    # Check if provided IP addresses exist in local interfaces
+    interfaces = get_local_interfaces()
+    available_ips = [ip for _, ip in interfaces]
+    
+    if args.wifi_ip not in available_ips:
+        parser.error(f"Wi-Fi IP {args.wifi_ip} not found in local network interfaces.\n"
+                    "Use --list-interfaces to see available network interfaces.")
+    
+    if args.mobile_ip not in available_ips:
+        parser.error(f"Mobile IP {args.mobile_ip} not found in local network interfaces.\n"
+                    "Use --list-interfaces to see available network interfaces.")
+    
     # Update sync interval if specified
     global TIME_SYNC_INTERVAL
     TIME_SYNC_INTERVAL = args.interval
