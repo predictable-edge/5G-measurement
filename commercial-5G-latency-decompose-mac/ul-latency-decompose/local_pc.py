@@ -237,11 +237,62 @@ def get_local_interfaces():
             import subprocess
             import re
             
-            # For macOS
-            output = subprocess.check_output(['ifconfig']).decode('utf-8')
-            pattern = r'(en\d+|wlan\d+).*?inet\s+(\d+\.\d+\.\d+\.\d+)'
-            for match in re.finditer(pattern, output, re.DOTALL):
-                interfaces.append((match.group(1), match.group(2)))
+            # Check which OS we're on
+            import platform
+            os_type = platform.system().lower()
+            
+            if 'darwin' in os_type:  # macOS
+                output = subprocess.check_output(['ifconfig']).decode('utf-8')
+                pattern = r'(en\d+|wlan\d+).*?inet\s+(\d+\.\d+\.\d+\.\d+)'
+                for match in re.finditer(pattern, output, re.DOTALL):
+                    interfaces.append((match.group(1), match.group(2)))
+            elif 'linux' in os_type:  # Linux
+                # Use a simpler approach for Linux
+                try:
+                    # Try using ip command first
+                    output = subprocess.check_output(['ip', 'addr']).decode('utf-8')
+                    lines = output.splitlines()
+                    
+                    current_iface = None
+                    for line in lines:
+                        # Get interface name
+                        if ': ' in line and not line.startswith(' '):
+                            parts = line.split(': ')
+                            if len(parts) >= 2:
+                                current_iface = parts[1].split('@')[0]
+                        
+                        # Get IPv4 address
+                        if current_iface and 'inet ' in line and 'inet6' not in line:
+                            parts = line.strip().split()
+                            for i, part in enumerate(parts):
+                                if part == 'inet' and i+1 < len(parts):
+                                    ip = parts[i+1].split('/')[0]
+                                    if ip != '127.0.0.1':  # Skip loopback
+                                        interfaces.append((current_iface, ip))
+                                        break
+                
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    # Fallback to ifconfig
+                    output = subprocess.check_output(['ifconfig']).decode('utf-8')
+                    lines = output.splitlines()
+                    
+                    current_iface = None
+                    for line in lines:
+                        # Get interface name
+                        if ' ' in line and not line.startswith(' '):
+                            current_iface = line.split(' ')[0]
+                        
+                        # Get IPv4 address
+                        if current_iface and 'inet ' in line and 'inet6' not in line:
+                            parts = line.strip().split()
+                            for i, part in enumerate(parts):
+                                if part == 'inet' and i+1 < len(parts):
+                                    ip = parts[i+1].split('/')[0]
+                                    if 'addr:' in ip:
+                                        ip = ip.split('addr:')[1]
+                                    if ip != '127.0.0.1':  # Skip loopback
+                                        interfaces.append((current_iface, ip))
+                                        break
         except Exception as e:
             print(f"Could not determine network interfaces: {e}")
     
