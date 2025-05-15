@@ -501,10 +501,10 @@ def receive_pong_thread(socket_obj):
                                 # Log stats periodically
                                 packets_received += 1
                                 if ping_pong_count % 100 == 0:
-                                    print("\n")
-                                    print(f"Ping-pong stats - Count: {ping_pong_count}, Min: {ping_pong_min_rtt:.2f}ms, " + 
-                                          f"Avg: {ping_pong_avg_rtt:.2f}ms, Max: {ping_pong_max_rtt:.2f}ms")
-                                    print("\n")
+                                    # print("\n")
+                                    # print(f"Ping-pong stats - Count: {ping_pong_count}, Min: {ping_pong_min_rtt:.2f}ms, " + 
+                                    #       f"Avg: {ping_pong_avg_rtt:.2f}ms, Max: {ping_pong_max_rtt:.2f}ms")
+                                    # print("\n")
                                     
                                     # Clean up old sequence numbers (if any left)
                                     current_time = time.time()
