@@ -154,22 +154,39 @@ def parse_arguments():
     Parse command line arguments
     """
     parser = argparse.ArgumentParser(description='UDP Client for latency measurement')
-    parser.add_argument('--cloud-ip', type=str, required=True, help='Cloud server IP address')
-    parser.add_argument('--mobile-ip', type=str, required=True, 
+    
+    # Create argument groups to make some arguments conditionally required
+    required_args = parser.add_argument_group('required arguments')
+    
+    # Add the list-interfaces flag first because we check for it before requiring other args
+    parser.add_argument('--list-interfaces', action='store_true',
+                        help='List available network interfaces and exit')
+    
+    # These are only required if not listing interfaces
+    required_args.add_argument('--cloud-ip', type=str, 
+                        help='Cloud server IP address')
+    required_args.add_argument('--mobile-ip', type=str,
                         help='Mobile IP address to bind for UDP data communication (format: x.x.x.x)')
-    parser.add_argument('--request-size', type=int, default=100, help='Request size in bytes (default: 10)')
-    parser.add_argument('--response-size', type=int, default=100, help='Response size in bytes (default: 10)')
+    
+    # Optional arguments
+    parser.add_argument('--request-size', type=int, default=100, help='Request size in bytes (default: 100)')
+    parser.add_argument('--response-size', type=int, default=100, help='Response size in bytes (default: 100)')
     parser.add_argument('--interval', type=int, default=1000, help='Request interval in ms (default: 1000)')
     parser.add_argument('--count', type=int, default=10, help='Number of requests to send (default: 10)')
     parser.add_argument('--timeout', type=int, default=1000, help='Socket timeout in ms (default: 1000)')
-    parser.add_argument('--list-interfaces', action='store_true',
-                        help='List available network interfaces and exit')
     parser.add_argument('--no-ping-pong', action='store_true',
                         help='Disable UDP ping-pong testing')
     
-    return parser.parse_args()
-
-
+    args = parser.parse_args()
+    
+    # If not listing interfaces, then cloud-ip and mobile-ip are required
+    if not args.list_interfaces and (args.cloud_ip is None or args.mobile_ip is None):
+        if args.cloud_ip is None:
+            parser.error('--cloud-ip is required when not using --list-interfaces')
+        if args.mobile_ip is None:
+            parser.error('--mobile-ip is required when not using --list-interfaces')
+    
+    return args
 
 def send_control_message(sock, server_address, request_size, response_size):
     """
