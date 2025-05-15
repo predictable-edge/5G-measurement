@@ -84,7 +84,11 @@ def process_chunk(data, client_address):
             return False, None
             
         # Unpack header: type(1) + request_id(4) + chunk_id(2) + total_chunks(2)
-        msg_type, request_id, chunk_id, total_chunks = struct.unpack('!BIHH', data[:9])
+        try:
+            msg_type, request_id, chunk_id, total_chunks = struct.unpack('!BIHH', data[:9])
+        except struct.error as e:
+            print(f"Error unpacking chunk header from {client_address}: {e}, data length: {len(data)}")
+            return False, None
         
         if msg_type != MSG_TYPE_REQUEST:
             print(f"Received unexpected message type: {msg_type}")
@@ -103,7 +107,7 @@ def process_chunk(data, client_address):
             
         return False, request_id
         
-    except (struct.error, IndexError) as e:
+    except (IndexError) as e:
         print(f"Error processing chunk: {e}")
         return False, None
 
@@ -152,7 +156,8 @@ def send_response(sock, client_address, request_id, response_size):
             this_chunk_payload = min(max_chunk_payload, remaining_payload)
             
             # Pack the header: type(1) + request_id(4) + chunk_id(2) + total_chunks(2)
-            chunk_header = struct.pack('!BIHH', MSG_TYPE_REQUEST, request_id, chunk_id, total_chunks)
+            # Use explicit ints to ensure correct type conversion across platforms
+            chunk_header = struct.pack('!BIHH', int(MSG_TYPE_REQUEST), int(request_id), int(chunk_id), int(total_chunks))
             
             # Create chunk data with header and payload
             chunk_data = chunk_header + b'0' * this_chunk_payload
@@ -257,19 +262,22 @@ def start_udp_server(port=UDP_PORT, max_packet_size=MAX_UDP_PACKET):
                     clear_chunk_buffer()
                     
                     # Unpack control message: type(1) + request_size(4) + response_size(4)
-                    _, request_size, response_size = struct.unpack('!BII', data)
-                    print(f"Received control message - Request size: {request_size}, Response size: {response_size}")
-                    
-                    # Store client configuration
-                    client_configs[client_address] = {
-                        'request_size': request_size,
-                        'response_size': response_size
-                    }
-                    
-                    # Send control ACK (just the message type)
-                    ack_message = struct.pack('!B', MSG_TYPE_CONTROL)
-                    server_socket.sendto(ack_message, client_address)
-                    print("Sent control ACK")
+                    try:
+                        _, request_size, response_size = struct.unpack('!BII', data)
+                        print(f"Received control message - Request size: {request_size}, Response size: {response_size}")
+                        
+                        # Store client configuration
+                        client_configs[client_address] = {
+                            'request_size': request_size,
+                            'response_size': response_size
+                        }
+                        
+                        # Send control ACK (just the message type)
+                        ack_message = struct.pack('!B', MSG_TYPE_CONTROL)
+                        server_socket.sendto(ack_message, client_address)
+                        print("Sent control ACK")
+                    except struct.error as e:
+                        print(f"Error unpacking control message from {client_address}: {e}")
                     
                 elif msg_type == MSG_TYPE_REQUEST:
                     # Process the chunk
@@ -283,7 +291,7 @@ def start_udp_server(port=UDP_PORT, max_packet_size=MAX_UDP_PACKET):
                         if response_size > 0:
                             send_response(server_socket, client_address, request_id, response_size)
                 
-            except (struct.error, IndexError) as e:
+            except (IndexError) as e:
                 print(f"Error processing message: {e}")
             
     except KeyboardInterrupt:

@@ -186,7 +186,8 @@ def send_control_message(sock, server_address, request_size, response_size):
     """
     try:
         # Pack control message: type(1) + request_size(4) + response_size(4)
-        control_message = struct.pack('!BII', MSG_TYPE_CONTROL, request_size, response_size)
+        # Use explicit unsigned types for Windows compatibility
+        control_message = struct.pack('!BII', int(MSG_TYPE_CONTROL), int(request_size), int(response_size))
         
         # Send control message
         sock.sendto(control_message, server_address)
@@ -246,7 +247,8 @@ def send_request(sock, server_address, request_size):
             this_chunk_payload = min(max_chunk_payload, remaining_payload)
             
             # Pack the header: type(1) + request_id(4) + chunk_id(2) + total_chunks(2)
-            chunk_header = struct.pack('!BIHH', MSG_TYPE_REQUEST, request_id, chunk_id, total_chunks)
+            # Use explicit ints to ensure correct type conversion across platforms
+            chunk_header = struct.pack('!BIHH', int(MSG_TYPE_REQUEST), int(request_id), int(chunk_id), int(total_chunks))
             
             # Create chunk data with header and payload
             chunk_data = chunk_header + b'0' * this_chunk_payload
@@ -301,7 +303,12 @@ def receive_response(sock, request_id, send_time, timeout_ms=5000):
                     continue
                 
                 # Unpack header to get type, request ID, chunk ID and total chunks
-                msg_type, resp_request_id, chunk_id, chunks_count = struct.unpack('!BIHH', data[:9])
+                # Add explicit error handling for struct unpacking
+                try:
+                    msg_type, resp_request_id, chunk_id, chunks_count = struct.unpack('!BIHH', data[:9])
+                except struct.error as e:
+                    print(f"Error unpacking response header: {e}, data length: {len(data)}")
+                    continue
                 
                 if msg_type != MSG_TYPE_REQUEST:
                     print(f"Received unexpected message type: {msg_type}")
@@ -439,7 +446,7 @@ def receive_pong_thread(socket_obj):
         while running:
             # Receive pong response
             try:
-                socket_obj.settimeout(5.0)  # 1 second timeout
+                socket_obj.settimeout(5.0)  # 5 second timeout
                 data, addr = socket_obj.recvfrom(2048)  # Increase buffer size
                 
                 # Process the response
