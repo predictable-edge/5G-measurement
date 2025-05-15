@@ -10,8 +10,96 @@ import random
 SERVER_IP = '0.0.0.0'  # Listen on all interfaces
 SERVER_SYNC_PORT = 5000     # Port for timestamp service (TCP)
 PHONE_SERVER_PORT = 5002    # Port for phone client connections (UDP)
+PING_PONG_PORT = 5001       # Port for UDP ping-pong measurements
 MAX_UDP_SEGMENT = 4096      # Maximum UDP segment size
 UDP_BUFFER_SIZE = 4194304   # Buffer size for UDP socket (4MB)
+
+def handle_ping_pong_client(client_socket, client_address):
+    """
+    Handle a ping-pong client connection.
+    Responds immediately to each ping message with a pong message.
+    
+    Args:
+        client_socket: The client socket
+        client_address: Address of the client
+    """
+    try:
+        print(f"New ping-pong connection from {client_address}")
+        
+        # Wait for initial message
+        data = client_socket.recv(1024)
+        if data == b'INIT':
+            print(f"Ping-pong initialized with {client_address}")
+        else:
+            print(f"Unexpected initial ping-pong message from {client_address}: {data}")
+        
+        pong_count = 0
+        
+        while True:
+            # Receive ping
+            data = client_socket.recv(1024)
+            if not data:
+                # Connection closed by client
+                break
+                
+            # Get ping message and sequence
+            try:
+                message = data.decode()
+                if message.startswith("PING:"):
+                    # Extract sequence number
+                    sequence = int(message.split(":")[1])
+                    
+                    # Send pong response with same sequence
+                    response = f"PONG:{sequence}".encode()
+                    client_socket.sendall(response)
+                    
+                    pong_count += 1
+                    if pong_count % 1000 == 0:
+                        print(f"Sent {pong_count} pongs to {client_address}")
+                else:
+                    print(f"Unexpected message format from {client_address}: {message}")
+            except Exception as e:
+                print(f"Error processing ping-pong message: {e}")
+                continue
+    
+    except ConnectionResetError:
+        print(f"Ping-pong connection reset by {client_address}")
+    except Exception as e:
+        print(f"Error handling ping-pong client {client_address}: {e}")
+    finally:
+        # Close the connection
+        client_socket.close()
+        print(f"Ping-pong connection closed with client {client_address}, sent {pong_count} pongs")
+
+def listen_for_ping_pong_clients():
+    """Listen for ping-pong client connections on PING_PONG_PORT using TCP"""
+    # Create TCP socket for ping-pong clients
+    ping_pong_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    ping_pong_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Disable Nagle algorithm to prevent delays
+    ping_pong_server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    ping_pong_server_socket.bind((SERVER_IP, PING_PONG_PORT))
+    ping_pong_server_socket.listen(5)  # Allow up to 5 queued connections
+    
+    print(f"Server listening for ping-pong clients on TCP {SERVER_IP}:{PING_PONG_PORT}")
+    
+    try:
+        while True:
+            # Accept new connection
+            client_socket, client_address = ping_pong_server_socket.accept()
+            
+            # Start a new thread to handle this client
+            client_thread = threading.Thread(
+                target=handle_ping_pong_client,
+                args=(client_socket, client_address)
+            )
+            client_thread.daemon = True
+            client_thread.start()
+    
+    except KeyboardInterrupt:
+        print("Ping-pong server shutting down...")
+    finally:
+        ping_pong_server_socket.close()
 
 def handle_pc_client(client_socket, client_address):
     """Handle communication with a connected PC client using TCP"""
@@ -218,6 +306,55 @@ def listen_for_phone_clients_udp():
     finally:
         phone_server_socket.close()
 
+def handle_ping_pong_udp():
+    """
+    Handle ping-pong requests over UDP.
+    Immediately responds to each ping message with a pong message.
+    """
+    try:
+        # Create UDP socket for ping-pong
+        ping_pong_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ping_pong_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        ping_pong_socket.bind((SERVER_IP, PING_PONG_PORT))
+        
+        print(f"Server listening for ping-pong requests on UDP {SERVER_IP}:{PING_PONG_PORT}")
+        
+        pong_count = 0
+        
+        while True:
+            # Receive ping request
+            data, client_address = ping_pong_socket.recvfrom(1024)
+            
+            try:
+                message = data.decode()
+                
+                # Handle PING message
+                if message.startswith("PING:"):
+                    # Extract sequence number
+                    sequence = message.split(":")[1]
+                    
+                    # Create pong response with same sequence
+                    response = f"PONG:{sequence}".encode()
+                    
+                    # Send response back to the client (same address that sent the ping)
+                    ping_pong_socket.sendto(response, client_address)
+                    
+                    pong_count += 1
+                    if pong_count % 100 == 0:
+                        print(f"Sent {pong_count} pong responses")
+                else:
+                    print(f"Unexpected message format from {client_address}: {message}")
+            
+            except Exception as e:
+                print(f"Error processing ping-pong message: {e}")
+                continue
+    
+    except Exception as e:
+        print(f"Error in ping-pong UDP handler: {e}")
+    finally:
+        if 'ping_pong_socket' in locals():
+            ping_pong_socket.close()
+
 def main():
     # Start PC client listener thread (TCP)
     pc_thread = threading.Thread(target=listen_for_pc_clients)
@@ -229,7 +366,12 @@ def main():
     phone_thread.daemon = True
     phone_thread.start()
     
-    print(f"AWS Server running with TCP connections for PC clients and UDP for phone clients")
+    # Start ping-pong handler thread (UDP)
+    ping_pong_thread = threading.Thread(target=handle_ping_pong_udp)
+    ping_pong_thread.daemon = True
+    ping_pong_thread.start()
+    
+    print(f"Server running with TCP connections for PC clients, UDP for phone clients, and UDP for ping-pong")
     
     # Keep main thread alive
     try:
