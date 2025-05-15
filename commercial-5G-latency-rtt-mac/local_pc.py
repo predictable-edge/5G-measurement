@@ -439,7 +439,7 @@ def receive_pong_thread(socket_obj):
         while running:
             # Receive pong response
             try:
-                socket_obj.settimeout(1.0)  # 1 second timeout
+                socket_obj.settimeout(5.0)  # 1 second timeout
                 data, addr = socket_obj.recvfrom(2048)  # Increase buffer size
                 
                 # Process the response
