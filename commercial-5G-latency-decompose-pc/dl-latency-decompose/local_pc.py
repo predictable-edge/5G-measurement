@@ -161,6 +161,30 @@ def get_local_interfaces():
                 pattern = r'(en\d+|wlan\d+).*?inet\s+(\d+\.\d+\.\d+\.\d+)'
                 for match in re.finditer(pattern, output, re.DOTALL):
                     interfaces.append((match.group(1), match.group(2)))
+            elif 'windows' in os_type:  # Windows
+                # Use ipconfig to get interfaces on Windows
+                output = subprocess.check_output(['ipconfig', '/all']).decode('utf-8', errors='ignore')
+                sections = output.split('\r\n\r\n')
+                
+                current_iface = None
+                for section in sections:
+                    lines = section.split('\r\n')
+                    if len(lines) > 0 and ':' in lines[0]:
+                        # This is an interface section
+                        current_iface = lines[0].strip()
+                        
+                        # Look for IPv4 Address in this section
+                        for line in lines:
+                            if 'IPv4 Address' in line and ':' in line:
+                                parts = line.split(':')
+                                if len(parts) >= 2:
+                                    # Clean up the IP address
+                                    ip = parts[1].strip()
+                                    # Remove (Preferred) suffix if present
+                                    ip = ip.split('(')[0].strip()
+                                    # Exclude loopback
+                                    if ip != '127.0.0.1' and current_iface:
+                                        interfaces.append((current_iface, ip))
             elif 'linux' in os_type:  # Linux
                 # Use a simpler approach for Linux
                 try:
