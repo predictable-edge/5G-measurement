@@ -5,12 +5,17 @@ import time
 import random
 import datetime
 import os
+import threading
 from collections import defaultdict
 
 # Maximum UDP packet size (practically safe)
 MAX_UDP_PACKET = 8192
 # UDP port for data communication
 UDP_PORT = 5000
+# UDP port for ping-pong measurements
+PING_PONG_PORT = 5001
+# Interval for ping-pong in seconds (20ms)
+PING_INTERVAL = 0.02
 
 # Message types
 MSG_TYPE_CONTROL = 1
@@ -25,6 +30,17 @@ response_buffer = defaultdict(dict)  # {request_id: {chunk_id: data}}
 # Results tracking
 results_file = None             # File to save measurement results
 measurement_count = 0           # Counter for received packets
+
+# Ping-pong measurements
+ping_pong_socket = None         # UDP socket for ping-pong measurements
+ping_sequence = {}              # Dictionary to track {sequence: send_time}
+ping_pong_rtts = []             # List to store RTT values
+ping_pong_min_rtt = float('inf')  # Minimum RTT observed
+ping_pong_max_rtt = 0.0         # Maximum RTT observed
+ping_pong_avg_rtt = 0.0         # Average RTT
+ping_pong_count = 0             # Number of ping-pongs completed
+ping_pong_lock = threading.Lock() # Lock for ping-pong stats
+running = True                  # Flag to control thread execution
 
 def get_local_interfaces():
     """Returns a list of local network interfaces with their IP addresses"""
@@ -66,13 +82,15 @@ def parse_arguments():
     parser.add_argument('--cloud-ip', type=str, required=True, help='Cloud server IP address')
     parser.add_argument('--mobile-ip', type=str, required=True, 
                         help='Mobile IP address to bind for UDP data communication (format: x.x.x.x)')
-    parser.add_argument('--request_size', type=int, default=100, help='Request size in bytes (default: 100)')
-    parser.add_argument('--response_size', type=int, default=100, help='Response size in bytes (default: 100)')
+    parser.add_argument('--request-size', type=int, default=100, help='Request size in bytes (default: 10)')
+    parser.add_argument('--response-size', type=int, default=100, help='Response size in bytes (default: 10)')
     parser.add_argument('--interval', type=int, default=1000, help='Request interval in ms (default: 1000)')
     parser.add_argument('--count', type=int, default=10, help='Number of requests to send (default: 10)')
     parser.add_argument('--timeout', type=int, default=1000, help='Socket timeout in ms (default: 1000)')
     parser.add_argument('--list-interfaces', action='store_true',
                         help='List available network interfaces and exit')
+    parser.add_argument('--no-ping-pong', action='store_true',
+                        help='Disable UDP ping-pong testing')
     
     return parser.parse_args()
 
@@ -146,9 +164,6 @@ def send_request(sock, server_address, request_size):
         
         print(f"Total request data length: {request_size} bytes, splitting into {total_chunks} chunks")
         
-        # Record start time just before sending first chunk
-        send_time = time.time()
-        
         # Split data into chunks and send
         remaining_payload = payload_size
         for chunk_id in range(total_chunks):
@@ -167,6 +182,9 @@ def send_request(sock, server_address, request_size):
             
             # Update remaining payload
             remaining_payload -= this_chunk_payload
+            
+        # Record start time just before sending first chunk
+        send_time = time.time()
         
         return request_id, send_time
         
@@ -288,11 +306,191 @@ def setup_udp_socket(mobile_ip=None):
         print(f"Failed to set up UDP socket: {e}")
         return None
 
+def send_ping_thread(socket_obj, server_address):
+    """
+    Thread function to continuously send ping packets to the server.
+    
+    Args:
+        socket_obj: The shared UDP socket to use
+        server_address: Tuple of (IP, port) for the server
+    """
+    global running, ping_sequence
+    
+    try:
+        print(f"Starting to send ping packets to {server_address}")
+        
+        # Main ping sending loop
+        sequence = 0
+        while running:
+            sequence += 1
+            start_time = time.time()
+            
+            # Send ping message with sequence number
+            message = f"PING:{sequence}".encode()
+            socket_obj.sendto(message, server_address)
+            
+            # Store the send time with the sequence number
+            with ping_pong_lock:
+                ping_sequence[sequence] = start_time
+                
+                # Debug output for every 1000th message
+                if sequence % 1000 == 0:
+                    print(f"Sent ping {sequence} at {start_time:.6f}")
+            
+            # Sleep until next interval - adjust for processing time
+            sleep_time = PING_INTERVAL - (time.time() - start_time)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+    
+    except Exception as e:
+        print(f"Error in ping sender thread: {e}")
+
+def receive_pong_thread(socket_obj):
+    """
+    Thread function to continuously receive pong responses from the server.
+    
+    Args:
+        socket_obj: The shared UDP socket to use
+    """
+    global running, ping_sequence, ping_pong_rtts, ping_pong_min_rtt, ping_pong_max_rtt, ping_pong_avg_rtt, ping_pong_count
+    
+    try:
+        print(f"Ping receiver starting to listen for responses")
+        
+        # Stats for packet analysis
+        packets_received = 0
+        
+        # Main pong receiving loop
+        while running:
+            # Receive pong response
+            try:
+                socket_obj.settimeout(1.0)  # 1 second timeout
+                data, addr = socket_obj.recvfrom(2048)  # Increase buffer size
+                
+                # Process the response
+                try:
+                    message = data.decode()
+                    
+                    if message.startswith("PONG:"):
+                        # Extract sequence number
+                        sequence = int(message.split(":")[1])
+                        
+                        # Calculate RTT if we have the send time
+                        with ping_pong_lock:
+                            if sequence in ping_sequence:
+                                send_time = ping_sequence[sequence]
+                                receive_time = time.time()
+                                rtt = (receive_time - send_time) * 1000  # Convert to milliseconds
+                                
+                                # Update statistics
+                                ping_pong_count += 1
+                                ping_pong_rtts.append(rtt)
+                                ping_pong_min_rtt = min(ping_pong_min_rtt, rtt) if ping_pong_min_rtt != float('inf') else rtt
+                                ping_pong_max_rtt = max(ping_pong_max_rtt, rtt)
+                                ping_pong_avg_rtt = sum(ping_pong_rtts) / len(ping_pong_rtts)
+                                
+                                # Delete old sequence to prevent memory leak
+                                del ping_sequence[sequence]
+                                
+                                # Log stats periodically
+                                packets_received += 1
+                                if ping_pong_count % 100 == 0:
+                                    print(f"Ping-pong stats - Count: {ping_pong_count}, Min: {ping_pong_min_rtt:.2f}ms, " + 
+                                          f"Avg: {ping_pong_avg_rtt:.2f}ms, Max: {ping_pong_max_rtt:.2f}ms")
+                                    
+                                    # Clean up old sequence numbers (if any left)
+                                    current_time = time.time()
+                                    old_sequences = [seq for seq, t in ping_sequence.items() if current_time - t > 5]
+                                    for seq in old_sequences:
+                                        del ping_sequence[seq]
+                            else:
+                                # This can happen if the pong response is very delayed
+                                print(f"Received pong for unknown sequence: {sequence}")
+                    else:
+                        print(f"Unexpected message format: {message}")
+                except Exception as e:
+                    print(f"Error processing pong message: {e}")
+                    continue
+                    
+            except socket.timeout:
+                print("No pong received in the last second")
+                continue
+            except Exception as e:
+                print(f"Error receiving pong: {e}")
+                if not running:
+                    break
+                continue
+    
+    except Exception as e:
+        print(f"Error in pong receiver thread: {e}")
+
+def ping_pong_client(cloud_ip, mobile_ip=None):
+    """
+    Create UDP ping-pong measurement between client and server.
+    One thread sends pings, another receives pongs.
+    
+    Args:
+        cloud_ip: IP address of the cloud server
+        mobile_ip: Optional mobile interface IP to bind to
+    """
+    global ping_sequence, ping_pong_socket
+    
+    # Initialize sequence tracking
+    ping_sequence = {}  # Dictionary to track {sequence: send_time}
+    
+    try:
+        # Create a single shared UDP socket
+        ping_pong_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        
+        # Bind to specific interface if provided
+        if mobile_ip:
+            try:
+                ping_pong_socket.bind((mobile_ip, 0))  # 0 = any available port
+                print(f"Ping-pong socket bound to Mobile IP: {mobile_ip}")
+            except Exception as bind_err:
+                print(f"Failed to bind ping-pong socket to {mobile_ip}: {bind_err}")
+                print("Continuing without binding to specific interface")
+        
+        # Get the local port we're bound to
+        local_addr = ping_pong_socket.getsockname()
+        print(f"Ping-pong socket using local address: {local_addr}")
+        
+        # Server address
+        server_address = (cloud_ip, PING_PONG_PORT)
+        
+        # Start receiver thread
+        receiver = threading.Thread(
+            target=receive_pong_thread,
+            args=(ping_pong_socket,),
+            daemon=True
+        )
+        receiver.start()
+        
+        # Wait a moment to ensure receiver is listening
+        time.sleep(0.1)
+        
+        # Start sender thread
+        sender = threading.Thread(
+            target=send_ping_thread,
+            args=(ping_pong_socket, server_address),
+            daemon=True
+        )
+        sender.start()
+        
+        print(f"Ping-pong client started with sender and receiver threads")
+        
+        # Return the socket so it can be properly closed
+        return ping_pong_socket, sender, receiver
+        
+    except Exception as e:
+        print(f"Error setting up ping-pong client: {e}")
+        return None, None, None
+
 def main():
     """
     Main function to start the client
     """
-    global measurement_count, results_file
+    global measurement_count, results_file, running, ping_pong_socket
     
     args = parse_arguments()
     
@@ -322,6 +520,13 @@ def main():
         if response.lower() != 'y':
             print("Exiting...")
             return
+    
+    # Start ping-pong UDP latency testing if not disabled
+    if not args.no_ping_pong:
+        print(f"Starting UDP ping-pong testing to {args.cloud_ip} using interface {args.mobile_ip}")
+        ping_pong_socket, _, _ = ping_pong_client(args.cloud_ip, args.mobile_ip)
+    
+    time.sleep(1)
     
     # Create UDP socket bound to mobile IP
     client_socket = setup_udp_socket(args.mobile_ip)
@@ -383,9 +588,12 @@ def main():
         
     except KeyboardInterrupt:
         print("\nClient shutting down...")
+        running = False
     finally:
-        # Close socket
+        # Close sockets
         client_socket.close()
+        if ping_pong_socket:
+            ping_pong_socket.close()
         
         # Close results file
         if results_file:

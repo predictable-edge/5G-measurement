@@ -1,16 +1,22 @@
 import socket
 import struct
 import time
+import threading
 from collections import defaultdict
 
 # Maximum UDP packet size (practically safe)
 MAX_UDP_PACKET = 8192
 # UDP port for data communication
 UDP_PORT = 5000
+# Port for UDP ping-pong measurements
+PING_PONG_PORT = 5001
 
 # Message types
 MSG_TYPE_CONTROL = 1
 MSG_TYPE_REQUEST = 2
+
+# Global variables
+running = True              # Flag to control thread execution
 
 # Storage for received chunks
 chunk_buffer = defaultdict(dict)  # {request_id: {chunk_id: data}}
@@ -165,6 +171,55 @@ def send_response(sock, client_address, request_id, response_size):
         print(f"Error sending response: {e}")
         return False
 
+def handle_ping_pong_udp():
+    """
+    Handle ping-pong requests over UDP.
+    Immediately responds to each ping message with a pong message.
+    """
+    try:
+        # Create UDP socket for ping-pong
+        ping_pong_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ping_pong_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        ping_pong_socket.bind(('', PING_PONG_PORT))
+        
+        print(f"Server listening for ping-pong requests on UDP port {PING_PONG_PORT}")
+        
+        pong_count = 0
+        
+        while running:
+            # Receive ping request
+            data, client_address = ping_pong_socket.recvfrom(1024)
+            
+            try:
+                message = data.decode()
+                
+                # Handle PING message
+                if message.startswith("PING:"):
+                    # Extract sequence number
+                    sequence = message.split(":")[1]
+                    
+                    # Create pong response with same sequence
+                    response = f"PONG:{sequence}".encode()
+                    
+                    # Send response back to the client (same address that sent the ping)
+                    ping_pong_socket.sendto(response, client_address)
+                    
+                    pong_count += 1
+                    if pong_count % 100 == 0:
+                        print(f"Sent {pong_count} pong responses")
+                else:
+                    print(f"Unexpected message format from {client_address}: {message}")
+            
+            except Exception as e:
+                print(f"Error processing ping-pong message: {e}")
+                continue
+    
+    except Exception as e:
+        print(f"Error in ping-pong UDP handler: {e}")
+    finally:
+        if 'ping_pong_socket' in locals():
+            ping_pong_socket.close()
+
 def start_udp_server(port=UDP_PORT, max_packet_size=MAX_UDP_PACKET):
     """
     Start a UDP server that listens for incoming data
@@ -240,7 +295,33 @@ def main():
     """
     Main function to start the server
     """
-    start_udp_server()
+    global running
+    
+    try:
+        # Start ping-pong handler thread
+        ping_pong_thread = threading.Thread(
+            target=handle_ping_pong_udp,
+            daemon=True
+        )
+        ping_pong_thread.start()
+        
+        # Start the main UDP server thread
+        server_thread = threading.Thread(
+            target=start_udp_server,
+            daemon=True
+        )
+        server_thread.start()
+        
+        print("Server started. Press Ctrl+C to exit.")
+        
+        # Keep the main thread alive
+        while True:
+            time.sleep(1)
+            
+    except KeyboardInterrupt:
+        print("\nServer shutting down...")
+        running = False
+        time.sleep(1)  # Give threads time to clean up
 
 if __name__ == "__main__":
     main()
