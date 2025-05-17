@@ -601,17 +601,17 @@ def main():
     
     # Check if mobile IP is in available interfaces
     interfaces = get_local_interfaces()
-    available_ips = [ip for _, ip in interfaces]
+    # available_ips = [ip for _, ip in interfaces]
     
-    if args.mobile_ip not in available_ips:
-        print(f"Warning: Mobile IP {args.mobile_ip} not found in local network interfaces.")
-        print("Available interfaces:")
-        for iface, ip in interfaces:
-            print(f"  {iface}: {ip}")
-        response = input("Continue anyway? (y/n): ")
-        if response.lower() != 'y':
-            print("Exiting...")
-            return
+    # if args.mobile_ip not in available_ips:
+    #     print(f"Warning: Mobile IP {args.mobile_ip} not found in local network interfaces.")
+    #     print("Available interfaces:")
+    #     for iface, ip in interfaces:
+    #         print(f"  {iface}: {ip}")
+    #     response = input("Continue anyway? (y/n): ")
+    #     if response.lower() != 'y':
+    #         print("Exiting...")
+    #         return
     
     # Start ping-pong UDP latency testing if not disabled
     if not args.no_ping_pong:

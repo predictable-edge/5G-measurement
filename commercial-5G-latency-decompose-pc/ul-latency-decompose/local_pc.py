@@ -552,15 +552,15 @@ def main():
     
     # Check if provided IP addresses exist in local interfaces
     interfaces = get_local_interfaces()
-    available_ips = [ip for _, ip in interfaces]
+    # available_ips = [ip for _, ip in interfaces]
     
-    if args.wifi_ip not in available_ips:
-        parser.error(f"Wi-Fi IP {args.wifi_ip} not found in local network interfaces.\n"
-                    "Use --list-interfaces to see available network interfaces.")
+    # if args.wifi_ip not in available_ips:
+    #     parser.error(f"Wi-Fi IP {args.wifi_ip} not found in local network interfaces.\n"
+    #                 "Use --list-interfaces to see available network interfaces.")
     
-    if args.mobile_ip not in available_ips:
-        parser.error(f"Mobile IP {args.mobile_ip} not found in local network interfaces.\n"
-                    "Use --list-interfaces to see available network interfaces.")
+    # if args.mobile_ip not in available_ips:
+    #     parser.error(f"Mobile IP {args.mobile_ip} not found in local network interfaces.\n"
+    #                 "Use --list-interfaces to see available network interfaces.")
     
     # Update request parameters
     num_requests = args.requests
