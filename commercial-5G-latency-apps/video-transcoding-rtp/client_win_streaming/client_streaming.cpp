@@ -18,7 +18,8 @@
 #include <mutex>
 #include <vector>
 #include <filesystem>
-#include <netinet/in.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <regex>
