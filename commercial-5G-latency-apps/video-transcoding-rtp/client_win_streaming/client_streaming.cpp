@@ -18,10 +18,11 @@
 #include <mutex>
 #include <vector>
 #include <filesystem>
+#include <regex>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
+// #pragma comment(lib, "ws2_32.lib")
 #else
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -824,7 +825,7 @@ void send_ping_and_wait_pong_from_url(const char* local_url, const char* remote_
     sendto(sock, "ping", 4, 0, (sockaddr*)&remote_addr, sizeof(remote_addr));
     char buf[128] = {0};
     struct timeval tv = {3, 0};
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
     ssize_t n = recv(sock, buf, sizeof(buf), 0);
     if (n > 0 && strncmp(buf, "pong", 4) == 0) {
         // ok
