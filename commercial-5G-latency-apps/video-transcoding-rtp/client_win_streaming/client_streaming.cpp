@@ -827,7 +827,7 @@ void send_ping_and_wait_pong_from_url(const char* local_url, const char* remote_
     struct timeval tv = {3, 0};
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
     ssize_t n = recv(sock, buf, sizeof(buf), 0);
-    if (n > 0 && strncmp(buf, "pong", 4) == 0) {
+    if (n > 0) {
         // ok
     } else {
         fprintf(stderr, "Did not receive pong from transcoding.\n");
