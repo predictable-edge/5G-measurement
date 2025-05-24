@@ -18,11 +18,16 @@
 #include <mutex>
 #include <vector>
 #include <filesystem>
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
+#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <regex>
+#include <unistd.h>
+#endif
 
 // Include FFmpeg headers
 extern "C" {
