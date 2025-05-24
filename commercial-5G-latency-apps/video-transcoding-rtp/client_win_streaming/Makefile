@@ -5,7 +5,7 @@ CXX := g++
 CXXFLAGS := -std=c++17 -Wall -O3 $(shell pkg-config --cflags libavformat libavcodec libavutil libswscale)
 
 # Linker Flags
-LDFLAGS := $(shell pkg-config --libs libavformat libavcodec libavutil libswscale)
+LDFLAGS := $(shell pkg-config --libs libavformat libavcodec libavutil libswscale) -lws2_32
 
 # Target Executable
 TARGET := client_streaming
