@@ -15,3 +15,6 @@ pip install numpy opencv-python ultralytics posix_ipc zmq
 # echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
 # echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
 # source ~/.bashrc
+
+# For virtialized GPU in cloud
+# acs-plugin-manager --exec --plugin grid_driver_install
