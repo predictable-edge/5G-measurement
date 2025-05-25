@@ -1,18 +1,11 @@
 # Compiler
 CXX := g++
 
-# Set pkg-config path to include Homebrew's pkgconfig directory
-export PKG_CONFIG_PATH := /opt/homebrew/lib/pkgconfig:$(PKG_CONFIG_PATH)
-
-# Additional include paths if pkg-config fails
-FFMPEG_INCLUDE := -I/opt/homebrew/Cellar/ffmpeg/7.1.1_2/include
-FFMPEG_LIBS := -L/opt/homebrew/Cellar/ffmpeg/7.1.1_2/lib -lavformat -lavcodec -lavutil -lswscale
-
 # Compiler Flags
-CXXFLAGS := -std=c++17 -Wall -O3 $(shell pkg-config --cflags libavformat libavcodec libavutil libswscale 2>/dev/null || echo "$(FFMPEG_INCLUDE)")
+CXXFLAGS := -std=c++17 -Wall -O3 $(shell pkg-config --cflags libavformat libavcodec libavutil libswscale)
 
 # Linker Flags
-LDFLAGS := $(shell pkg-config --libs libavformat libavcodec libavutil libswscale 2>/dev/null || echo "$(FFMPEG_LIBS)")
+LDFLAGS := $(shell pkg-config --libs libavformat libavcodec libavutil libswscale)
 
 # Target Executable
 TARGET := client_streaming
