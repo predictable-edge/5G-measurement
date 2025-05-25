@@ -192,6 +192,7 @@ def process_frames_with_yolo(
         
         # Load YOLO model
         model = YOLO(model_path)
+        print(f"YOLO model loaded. Using device: {model.device}")
         
         # Warmup inference with a dummy frame to initialize GPU and model
         print("Performing warmup inference...")
