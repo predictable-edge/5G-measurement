@@ -63,7 +63,7 @@ def main():
     
     # Run Python script in conda environment
     print("Starting Python script in Conda environment...")
-    conda_cmd = "conda run -n yolo python yolo_detection_shm.py"
+    conda_cmd = "python3 yolo_detection_shm.py"
     py_process = run_command(conda_cmd, shell=True)
     
     # Wait for both processes to complete
