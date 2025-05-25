@@ -4,6 +4,7 @@ sudo apt install -y libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev
 sudo apt install -y stress-ng
 pip install numpy opencv-python ultralytics posix_ipc zmq
 
+# Use whole GPU but not Grid GPU
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
 sudo add-apt-repository ppa:graphics-drivers/ppa -y
 sudo dpkg -i cuda-keyring_1.0-1_all.deb
