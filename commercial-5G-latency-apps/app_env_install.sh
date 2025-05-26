@@ -30,4 +30,6 @@ source ~/.bashrc
 # sudo passwd ubuntu | sudo passwd root
 
 # Install steam or alvr, for alvr, use 20.12.1 version
+# Check details of how to deploy alvr
+# https://cloud.wikis.utexas.edu/wiki/spaces/utns/pages/333192201/VR+application+ALVR+SteamVR+PhoneVR
 # Sunshine and moonlight, open the statistics on the moonlight
