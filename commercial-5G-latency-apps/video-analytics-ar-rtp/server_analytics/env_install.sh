@@ -22,3 +22,12 @@ source ~/.bashrc
 # sudo chown -R root:root /root/.config/Ultralytics
 # sudo chmod -R 755 /root/.config/Ultralytics
 
+# Ubuntu remote desktop
+# sudo apt install ubuntu-desktop-minimal
+# sudo apt install xrdp
+# sudo systemctl enable xrdp
+# sudo systemctl start xrdp
+# sudo passwd ubuntu | sudo passwd root
+
+# Install steam or alvr, for alvr, use 20.12.1 version
+# Sunshine and moonlight, open the statistics on the moonlight
