@@ -158,7 +158,7 @@ def parse_args():
                       help='Input image size')
     parser.add_argument('--model-type', type=str, 
                       choices=['n', 's', 'm', 'l', 'x'],
-                      default='x',
+                      default='l',
                       help='YOLOv8 model type (n:nano, s:small, m:medium, l:large, x:xlarge)')
     
     return parser.parse_args()
