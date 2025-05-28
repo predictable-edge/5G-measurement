@@ -6,8 +6,8 @@ CFLAGS = -std=c++14 -O2 -Xcompiler -pthread
 LIBS = -lcuda -lcudart -lm -lpthread
 
 # Target file
-TARGET = gpu_sm_stress
-SOURCE = gpu_sm_stress.cu
+TARGET = gpu_sm_stressor
+SOURCE = gpu_sm_stressor.cu
 
 # Default target
 all: $(TARGET)
