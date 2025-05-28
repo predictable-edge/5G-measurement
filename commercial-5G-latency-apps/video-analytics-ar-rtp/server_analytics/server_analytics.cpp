@@ -29,6 +29,7 @@
 #include <cstring>
 #include <algorithm>
 #include <netinet/tcp.h>  // Add this for TCP_NODELAY
+#include <unordered_map>
 
 // FFmpeg includes
 extern "C" {
@@ -39,6 +40,8 @@ extern "C" {
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
+
+std::unordered_map<int, uint64_t> frame_num_to_arrival_time_us;
 
 // Struct to hold YOLO detection result from shared memory
 struct YoloDetectionResult {
@@ -99,6 +102,56 @@ private:
 YoloResultQueue yolo_result_queue;
 std::atomic<bool> yolo_result_thread_running(false);
 std::atomic<bool> tcp_server_running(false);
+
+// Logger class for frame processing time
+class ProcessingTimeLogger {
+public:
+    ProcessingTimeLogger(const std::string& log_filename) : filename_(log_filename) {
+        // Create the directory if it doesn't exist
+        std::filesystem::path filepath(filename_);
+        std::filesystem::path parent_path = filepath.parent_path();
+        if (!parent_path.empty() && !std::filesystem::exists(parent_path)) {
+            try {
+                std::filesystem::create_directories(parent_path);
+                std::cout << "Created directory: " << parent_path << std::endl;
+            } catch (const std::filesystem::filesystem_error& e) {
+                std::cerr << "Error creating directory " << parent_path << ": " << e.what() << std::endl;
+                // Optionally, you might want to handle this error more gracefully
+            }
+        }
+
+        ofs_.open(filename_);
+        if (!ofs_.is_open()) {
+            std::cerr << "Failed to open " << filename_ << " for writing." << std::endl;
+        } else {
+            ofs_ << std::fixed << std::setprecision(2);
+            ofs_ << std::left << std::setw(10) << "Frame"
+                 << std::left << std::setw(20) << "Processing Time (ms)"
+                 << "\n";
+        }
+    }
+
+    ~ProcessingTimeLogger() {
+        if (ofs_.is_open()) {
+            ofs_.close();
+        }
+    }
+
+    void log_processing_time(int frame_number, double processing_time_ms) {
+        if (ofs_.is_open()) {
+            ofs_ << std::left << std::setw(10) << frame_number
+                 << std::left << std::setw(20) << processing_time_ms
+                 << "\n";
+        }
+    }
+
+private:
+    std::ofstream ofs_;
+    std::string filename_;
+};
+
+// Global instance of ProcessingTimeLogger
+ProcessingTimeLogger* g_processing_time_logger = nullptr;
 
 // Helper function to convert FFmpeg error codes to std::string
 std::string get_error_text(int errnum) {
@@ -458,6 +511,7 @@ void packet_reading_thread(AVFormatContext* input_fmt_ctx, int video_stream_idx,
         packet_queue.set_finished();
         return;
     }
+    int frame_counter = 0;
 
     while (true) {
         int ret = av_read_frame(input_fmt_ctx, packet);
@@ -469,6 +523,8 @@ void packet_reading_thread(AVFormatContext* input_fmt_ctx, int video_stream_idx,
         // int64_t timestamp = extract_timestamp(packet);
         // printf("timestamp: %ld\n", timestamp);
         if (packet->stream_index == video_stream_idx) {
+            frame_num_to_arrival_time_us[frame_counter] = get_current_time_us();
+            frame_counter++;
             packet_queue.push(packet);
             packet = av_packet_alloc();
             if (!packet) {
@@ -1108,6 +1164,13 @@ void tcp_result_server_thread(int port) {
                     client_connected = false;
                     continue;
                 }
+
+                uint64_t arrival_time_us = frame_num_to_arrival_time_us[result.frame_num];
+                uint64_t latency_us = get_current_time_us() - arrival_time_us;
+                double latency_ms = latency_us / 1000.0;
+                if (g_processing_time_logger) {
+                    g_processing_time_logger->log_processing_time(result.frame_num, latency_ms);
+                }
                 
                 if (result.frame_num % 100 == 0) {
                     std::cout << "Sent frame " << result.frame_num << " with " 
@@ -1129,6 +1192,11 @@ void tcp_result_server_thread(int port) {
 void cleanup() {
     yolo_result_thread_running = false;
     tcp_server_running = false;
+
+    if (g_processing_time_logger) {
+        delete g_processing_time_logger;
+        g_processing_time_logger = nullptr;
+    }
 
     sem_unlink("/frame_ready");
     sem_unlink("/frame_processed");
@@ -1165,6 +1233,10 @@ int main(int argc, char* argv[]) {
     
     // Initialize FFmpeg
     avformat_network_init();
+
+    // Create ProcessingTimeLogger instance
+    std::string log_filename = "results/process_" + get_timestamp_with_ms() + ".txt";
+    g_processing_time_logger = new ProcessingTimeLogger(log_filename);
 
     std::atomic<bool> decode_finished(false);
 
@@ -1210,6 +1282,12 @@ int main(int argc, char* argv[]) {
 
     // Clean up frame queues
     delete frame_queue;
+
+    // Clean up global logger
+    if (g_processing_time_logger) {
+        delete g_processing_time_logger;
+        g_processing_time_logger = nullptr;
+    }
 
     // Clean up FFmpeg
     cleanup();
