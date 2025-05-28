@@ -142,6 +142,7 @@ public:
             ofs_ << std::left << std::setw(10) << frame_number
                  << std::left << std::setw(20) << processing_time_ms
                  << "\n";
+            ofs_.flush();
         }
     }
 
@@ -1169,7 +1170,7 @@ void tcp_result_server_thread(int port) {
                 uint64_t latency_us = get_current_time_us() - arrival_time_us;
                 double latency_ms = latency_us / 1000.0;
                 if (g_processing_time_logger) {
-                    g_processing_time_logger->log_processing_time(result.frame_num, latency_ms);
+                    g_processing_time_logger->log_processing_time(result.frame_num + 1, latency_ms);
                 }
                 
                 if (result.frame_num % 100 == 0) {
