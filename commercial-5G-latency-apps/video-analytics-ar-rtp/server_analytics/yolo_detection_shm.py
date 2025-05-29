@@ -166,6 +166,9 @@ def process_frames_with_yolo(
         shm_map = mmap.mmap(shm.fd, 0)
         
         print(f"Connected to input shared memory and semaphores")
+
+        print("Clearing shared memory buffer...")
+        shm_map[:METADATA_SIZE] = b'\x00' * METADATA_SIZE
         
         # Connect to the result shared memory (should be created by detecting_tcp)
         max_retry = 30  # Maximum number of retries (5 seconds total with 0.2s sleep)
