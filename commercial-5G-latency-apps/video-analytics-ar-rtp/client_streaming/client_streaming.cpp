@@ -208,7 +208,7 @@ std::string get_timestamp_with_ms() {
     auto now_time_t = std::chrono::system_clock::to_time_t(now);
     std::tm* now_tm = std::localtime(&now_time_t);
     char buffer[20];
-    std::strftime(buffer, sizeof(buffer), "%Y%m%d-%H%M%S", now_tm);
+    std::strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", now_tm);
     std::ostringstream oss;
     oss << buffer << std::setw(3) << std::setfill('0') << ms_part.count();
     return oss.str();
@@ -226,7 +226,7 @@ void* receive_yolo_results(void* args) {
     
     // Setup latency logging
     std::string timestamp = get_timestamp_with_ms();
-    std::string log_dir = "result/latency-" + timestamp;
+    std::string log_dir = "result/latency_" + timestamp;
     std::string log_filename = log_dir + ".txt";
     LatencyLogger logger(log_filename);
     
