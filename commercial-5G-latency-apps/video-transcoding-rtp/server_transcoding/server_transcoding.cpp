@@ -69,7 +69,7 @@ std::string get_timestamp_with_ms() {
     auto now_time_t = std::chrono::system_clock::to_time_t(now);
     std::tm* now_tm = std::localtime(&now_time_t);
     char buffer[20];
-    std::strftime(buffer, sizeof(buffer), "%Y%m%d-%H%M%S", now_tm);
+    std::strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", now_tm);
     std::ostringstream oss;
     oss << buffer << std::setw(3) << std::setfill('0') << ms_part.count();
     return oss.str();
@@ -1081,8 +1081,7 @@ int main(int argc, char* argv[]) {
         config.width = resolution_bitrate_log[i].width;
         config.height = resolution_bitrate_log[i].height;
         config.bitrate = resolution_bitrate_log[i].bitrate_kbps;
-        config.log_filename = "result/task" + std::to_string(num_outputs) + "/" + get_timestamp_with_ms() + "/"
-                              + resolution_bitrate_log[i].log_filename + ".log";
+        config.log_filename = "result/latency_" + get_timestamp_with_ms() + ".txt";
         
         // Default framerate (will be updated from decoder)
         config.framerate = 30.0;

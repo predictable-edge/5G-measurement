@@ -68,7 +68,7 @@ std::string get_timestamp_with_ms() {
     auto now_time_t = std::chrono::system_clock::to_time_t(now);
     std::tm* now_tm = std::localtime(&now_time_t);
     char buffer[20];
-    std::strftime(buffer, sizeof(buffer), "%Y%m%d-%H%M%S", now_tm);
+    std::strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", now_tm);
     std::ostringstream oss;
     oss << buffer << std::setw(3) << std::setfill('0') << ms_part.count();
     return oss.str();
@@ -236,8 +236,7 @@ void* pull_stream(void* args) {
 
     // Create a TimingLogger instance for this pull thread
     std::stringstream ss;
-    ss <<  "result/task" << num_pull << "/" << get_timestamp_with_ms() << "/"
-       << "frame-" << index << ".log"; 
+    ss <<  "result/process_" << get_timestamp_with_ms() << ".txt"; 
     std::string log_filename = ss.str();
     TimingLogger logger(log_filename);
 
