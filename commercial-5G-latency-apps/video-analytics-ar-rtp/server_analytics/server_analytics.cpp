@@ -42,6 +42,7 @@ extern "C" {
 }
 
 std::unordered_map<int, uint64_t> frame_num_to_arrival_time_us;
+std::unordered_map<int, int> frame_num_to_frame_index;
 
 // Struct to hold YOLO detection result from shared memory
 struct YoloDetectionResult {
@@ -513,7 +514,7 @@ void packet_reading_thread(AVFormatContext* input_fmt_ctx, int video_stream_idx,
         return;
     }
     int frame_counter = 0;
-
+    int frame_index = 0;
     while (true) {
         int ret = av_read_frame(input_fmt_ctx, packet);
         if (ret < 0) {
@@ -524,7 +525,14 @@ void packet_reading_thread(AVFormatContext* input_fmt_ctx, int video_stream_idx,
         // int64_t timestamp = extract_timestamp(packet);
         // printf("timestamp: %ld\n", timestamp);
         if (packet->stream_index == video_stream_idx) {
+            if (packet->pts != AV_NOPTS_VALUE) {
+                frame_index = (packet->pts - 1) / 3000 + 2;
+            }
+            else {
+                frame_index = 1;
+            }
             frame_num_to_arrival_time_us[frame_counter] = get_current_time_us();
+            frame_num_to_frame_index[frame_counter] = frame_index;
             frame_counter++;
             packet_queue.push(packet);
             packet = av_packet_alloc();
@@ -1122,14 +1130,14 @@ void tcp_result_server_thread(int port) {
                 // - 4 bytes for frame number
                 // - 4 bytes for number of detections
                 // - For each detection: 6*4 bytes (4 floats for bbox, 1 float for confidence, 1 int for class ID)
-                size_t data_size = 8 + (result.num_detections * 24);
+                size_t data_size = 8 + 8 + (result.num_detections * 24);
                 
                 // Allocate buffer
                 std::vector<char> buffer(data_size);
                 char* ptr = buffer.data();
                 
                 // Write frame number
-                *reinterpret_cast<int*>(ptr) = result.frame_num;
+                *reinterpret_cast<int*>(ptr) = frame_num_to_frame_index[result.frame_num];
                 ptr += sizeof(int);
                 
                 // Write number of detections
@@ -1170,11 +1178,11 @@ void tcp_result_server_thread(int port) {
                 uint64_t latency_us = get_current_time_us() - arrival_time_us;
                 double latency_ms = latency_us / 1000.0;
                 if (g_processing_time_logger) {
-                    g_processing_time_logger->log_processing_time(result.frame_num + 1, latency_ms);
+                    g_processing_time_logger->log_processing_time(frame_num_to_frame_index[result.frame_num], latency_ms);
                 }
                 
                 if (result.frame_num % 100 == 0) {
-                    std::cout << "Sent frame " << result.frame_num << " with " 
+                    std::cout << "Sent frame " << frame_num_to_frame_index[result.frame_num] << " with " 
                               << result.num_detections << " detections to client" << std::endl;
                 }
             }
