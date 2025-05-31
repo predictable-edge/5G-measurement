@@ -34,7 +34,7 @@ extern "C" {
 std::string get_error_text(int errnum);
 std::string get_timestamp_with_ms();
 int64_t get_current_time_us();
-void add_timestamp_to_packet(AVPacket* pkt);
+void add_frame_index_to_packet(AVPacket* pkt, uint64_t frame_index);
 
 // Global variables for decoder information with synchronization
 struct GlobalDecoderInfo {
@@ -84,6 +84,7 @@ int64_t get_current_time_us() {
 // Structure to hold frame data and timing information
 struct FrameData {
     AVFrame* frame;
+    uint64_t frame_index;
     std::chrono::steady_clock::time_point packet_read_time;
     std::chrono::steady_clock::time_point decode_start_time;
     std::chrono::steady_clock::time_point decode_end_time;
@@ -457,7 +458,7 @@ void decoding_thread(AVCodecContext* decoder_ctx, PacketQueue& packet_queue, con
             std::cerr << "Error sending packet to decoder: " << get_error_text(ret) << std::endl;
             continue;
         }
-
+        uint64_t frame_index = 0;
         while (ret >= 0) {
             ret = avcodec_receive_frame(decoder_ctx, frame);
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
@@ -466,6 +467,13 @@ void decoding_thread(AVCodecContext* decoder_ctx, PacketQueue& packet_queue, con
             else if (ret < 0) {
                 std::cerr << "Error receiving frame from decoder: " << get_error_text(ret) << std::endl;
                 break;
+            }
+
+            if (frame->pts != AV_NOPTS_VALUE) {
+                frame_index = (frame->pts - 1) / 1500 + 2;
+            }
+            else {
+                frame_index = 1;
             }
 
             auto decode_end = std::chrono::steady_clock::now();
@@ -477,6 +485,7 @@ void decoding_thread(AVCodecContext* decoder_ctx, PacketQueue& packet_queue, con
                     continue;
                 }
                 FrameData frame_data;
+                frame_data.frame_index = frame_index;
                 frame_data.frame = cloned_frame;
                 frame_data.decode_start_time = decode_start;
                 frame_data.decode_end_time = decode_end;
@@ -853,7 +862,7 @@ bool encode_frames(const EncoderConfig& config, FrameQueue& frame_queue, std::at
             enc_pkt->stream_index = out_stream->index;
 
             // Add timestamp directly to packet data
-            add_timestamp_to_packet(enc_pkt);
+            add_frame_index_to_packet(enc_pkt, frame_data.frame_index);
 
             // Write packet to output - using interleaved write to properly handle timestamp ordering
             int write_ret = av_write_frame(output_fmt_ctx, enc_pkt);
@@ -870,7 +879,7 @@ bool encode_frames(const EncoderConfig& config, FrameQueue& frame_queue, std::at
                 }
                 av_packet_free(&empty_pkt);
             }
-            std::cout << "Encoded frame " << (frame_count + 2) / 2 << " at " << get_current_time_us() << std::endl;
+            std::cout << "Encoded frame " << frame_data.frame_index << " at " << get_current_time_us() << std::endl;
             av_packet_free(&enc_pkt);
         }
 
@@ -882,7 +891,7 @@ bool encode_frames(const EncoderConfig& config, FrameQueue& frame_queue, std::at
         double interval_time = std::chrono::duration<double, std::milli>(encode_end - frame_data.packet_read_time).count();
 
         frame_count += 2;
-        logger.add_entry(frame_count / 2, decode_time, encode_time, interval_time);
+        logger.add_entry(frame_data.frame_index, decode_time, encode_time, interval_time);
 
         if (frame_count % 100 == 0) {
             std::cout << "Encoded " << frame_count << " frames for " << config.output_url << ", queue length: " << frame_queue.size() << std::endl;
@@ -921,7 +930,7 @@ bool encode_frames(const EncoderConfig& config, FrameQueue& frame_queue, std::at
         enc_pkt->stream_index = out_stream->index;
 
         // Add timestamp directly to packet data
-        add_timestamp_to_packet(enc_pkt);
+        add_frame_index_to_packet(enc_pkt, 0);
 
         // Write flushed packet to output - using interleaved write to properly handle timestamp ordering
         int write_ret = av_write_frame(output_fmt_ctx, enc_pkt);
@@ -953,8 +962,8 @@ bool encode_frames(const EncoderConfig& config, FrameQueue& frame_queue, std::at
 }
 
 // Add timestamp directly to packet data
-void add_timestamp_to_packet(AVPacket* pkt) {
-    int64_t timestamp = get_current_time_us();
+void add_frame_index_to_packet(AVPacket* pkt, uint64_t frame_index) {
+    int64_t frame_index_int = frame_index;
     
     // Create a new packet
     AVPacket* new_pkt = av_packet_alloc();
@@ -976,7 +985,7 @@ void add_timestamp_to_packet(AVPacket* pkt) {
     memcpy(new_pkt->data, pkt->data, pkt->size);
     
     // Append timestamp to the end of data
-    memcpy(new_pkt->data + pkt->size, &timestamp, sizeof(int64_t));
+    memcpy(new_pkt->data + pkt->size, &frame_index_int, sizeof(int64_t));
     
     // Copy other packet properties
     new_pkt->pts = pkt->pts;
