@@ -1093,7 +1093,7 @@ int main(int argc, char* argv[]) {
         config.width = resolution_bitrate_log[i].width;
         config.height = resolution_bitrate_log[i].height;
         config.bitrate = resolution_bitrate_log[i].bitrate_kbps;
-        config.log_filename = "result/latency_" + get_timestamp_with_ms() + ".txt";
+        config.log_filename = "result/process_" + get_timestamp_with_ms() + ".txt";
         
         // Default framerate (will be updated from decoder)
         config.framerate = 30.0;
