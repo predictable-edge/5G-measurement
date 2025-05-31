@@ -405,7 +405,7 @@ void* receive_yolo_results(void* args) {
                     // Store detections for this frame
                     {
                         std::lock_guard<std::mutex> lock(detections_mutex);
-                        frame_detections[frame_num] = detections;
+                        frame_detections[frame_num - 1] = detections;
                     }
                 } else {
                     pthread_mutex_lock(&cout_mutex);
@@ -416,16 +416,16 @@ void* receive_yolo_results(void* args) {
             }
             
             // Process frame information for latency calculation
-            if (frame_timestamps.find(frame_num) != frame_timestamps.end()) {
+            if (frame_timestamps.find(frame_num - 1) != frame_timestamps.end()) {
                 // Calculate latency
                 int64_t receive_time_us = get_current_time_us();
-                int64_t send_time_us = frame_timestamps[frame_num];
+                int64_t send_time_us = frame_timestamps[frame_num - 1];
                 
                 // Log latency
-                logger.add_entry(frame_num + 1, send_time_us, receive_time_us);
+                logger.add_entry(frame_num, send_time_us, receive_time_us);
                 
                 // Remove from map to avoid memory growth
-                frame_timestamps.erase(frame_num);
+                frame_timestamps.erase(frame_num - 1);
                 
                 if (frame_num % 100 == 0) {
                     pthread_mutex_lock(&cout_mutex);
