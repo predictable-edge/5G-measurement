@@ -204,6 +204,7 @@ def send_data_to_cloud(cloud_server_ip, mobile_ip=None):
                 header = struct.pack('!IdId', request_id, timestamp, bytes_per_request, sync_rtt)
                 
                 # Send header to cloud server
+                header_sent_time = time.time()
                 cloud_udp_socket.sendto(header, cloud_address)
                 print(f"Sent header to cloud server - Request ID: {request_id}, Timestamp: {timestamp:.6f} (synchronized), Sync RTT: {sync_rtt*1000:.2f}ms")
                 
@@ -231,6 +232,8 @@ def send_data_to_cloud(cloud_server_ip, mobile_ip=None):
                         
                         if segments_sent % 10 == 0 or segments_sent == total_segments:
                             print(f"Sent segment {segments_sent}/{total_segments} to cloud server")
+                    all_segments_sent_time = time.time()
+                    print(f"All segments sent to cloud server in {all_segments_sent_time - header_sent_time:.6f} seconds\n")
                 
                 requests_sent += 1
                 print(f"Completed sending request {request_id}/{num_requests} to cloud server - Size: {bytes_per_request} bytes")
@@ -549,8 +552,8 @@ def main():
                         help='Wi-Fi IP address to bind for time synchronization (required, format: x.x.x.x)')
     parser.add_argument('--requests', type=int, default=100,
                         help='Number of requests to send to cloud server (default: 10)')
-    parser.add_argument('--bytes', type=int, default=1,
-                        help='Size in bytes per request (default: 1)')
+    parser.add_argument('--bytes', type=int, default=0,
+                        help='Size in bytes per request (default: 0)')
     parser.add_argument('--interval', type=int, default=1000,
                         help='Interval between packets in milliseconds (default: 1000)')
     parser.add_argument('--list-interfaces', action='store_true',
