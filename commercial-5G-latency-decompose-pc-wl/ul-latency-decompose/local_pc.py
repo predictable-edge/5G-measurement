@@ -9,7 +9,7 @@ import argparse
 CLOUD_SERVER_UDP_PORT = 5002    # Cloud server UDP port for data transmission
 LZ_SERVER_TIME_SYNC_PORT = 5000 # LZ server port for time synchronization
 PING_PONG_PORT = 5001           # Port for UDP ping-pong measurements
-TIME_SYNC_INTERVAL = 1          # Expected sync interval from LZ server
+TIME_SYNC_INTERVAL = 1          # Time sync interval with LZ server
 PACKET_INTERVAL = 1             # Time between sending packets (seconds)
 MAX_UDP_SEGMENT = 4096          # Maximum UDP segment size
 PING_INTERVAL = 0.02            # Interval for ping-pong in seconds (20ms)
@@ -21,6 +21,12 @@ ping_pong_socket = None         # UDP socket for ping-pong measurements
 running = True                  # Flag to control thread execution
 num_requests = 10               # Number of requests to send
 bytes_per_request = 1           # Number of bytes per request
+
+# Time synchronization variables
+time_offset = 0.0               # Time difference between client and LZ server
+last_sync_time = 0              # Last time we synced with LZ server
+current_sync_rtt = 0.0          # Current RTT with LZ time server
+lock = threading.Lock()         # Lock for thread-safe updates to time sync data
 
 # Ping-pong measurements
 ping_sequence = {}                # Dictionary to track {sequence: send_time}
@@ -59,56 +65,67 @@ def connect_to_lz_time_server(lz_server_ip, wifi_ip):
             print("Retrying in 5 seconds...")
             time.sleep(5)
 
-def listen_for_lz_sync():
-    """Listen for time sync packets from LZ server and respond"""
-    global lz_time_socket, running
+def sync_with_lz_server(lz_server_ip, wifi_ip):
+    """Periodically sync time with LZ server"""
+    global time_offset, last_sync_time, lz_time_socket, running, current_sync_rtt
     
-    try:
-        while running:
-            try:
-                # Wait for timestamp from LZ server
-                data = lz_time_socket.recv(8)  # Expect an 8-byte double
-                if not data or len(data) < 8:
-                    # Connection closed or invalid data
-                    if not data:
-                        print("LZ server connection closed, reconnecting...")
-                    else:
-                        print(f"Received invalid data from LZ server: {len(data)} bytes, expected 8")
-                    
-                    # Try to reconnect
-                    lz_time_socket.close()
-                    lz_time_socket = None
-                    break
+    while running:
+        try:
+            # Ensure we have a connection
+            if lz_time_socket is None:
+                connect_to_lz_time_server(lz_server_ip, wifi_ip)
                 
-                # Unpack server timestamp
-                server_timestamp = struct.unpack('!d', data)[0]
-                
-                # Send our current time back to server
-                client_timestamp = time.time()
-                response = struct.pack('!d', client_timestamp)
-                lz_time_socket.sendall(response)
-                
-                print(f"Received sync from LZ server - Server time: {server_timestamp:.6f}, responded with: {client_timestamp:.6f}")
-                
-            except socket.timeout:
-                # Socket timeout, just continue the loop
-                continue
-            except ConnectionError as e:
-                print(f"Connection error with LZ server: {e}")
+            send_time = time.time()
+            
+            # Send request to LZ server (single byte as request)
+            lz_time_socket.sendall(b'x')
+            
+            # Receive response from LZ server
+            data = lz_time_socket.recv(1024)
+            if not data:
+                # Connection closed, try to reconnect
+                print("LZ server connection closed, reconnecting...")
                 lz_time_socket.close()
                 lz_time_socket = None
-                break
-            except Exception as e:
-                print(f"Error handling LZ sync: {e}")
-                time.sleep(1)  # Avoid tight loop
-    
-    except Exception as e:
-        print(f"Error in LZ sync listener: {e}")
-        
-    finally:
-        # Handle reconnection in the main thread
-        if not lz_time_socket and running:
-            print("LZ sync listener exited, will reconnect")
+                connect_to_lz_time_server(lz_server_ip, wifi_ip)
+                continue
+                
+            receive_time = time.time()
+            
+            # Unpack timestamp from response (first 8 bytes)
+            server_time = struct.unpack('d', data[:8])[0]
+            rtt = receive_time - send_time
+            
+            # Calculate one-way delay (assuming symmetric network)
+            one_way_delay = rtt / 2
+            
+            # Calculate time offset (difference between server time and our time)
+            # Adjusted for the one-way delay
+            offset = server_time - (send_time + one_way_delay)
+            
+            with lock:
+                time_offset = offset
+                last_sync_time = time.time()
+                current_sync_rtt = rtt  # Store the latest RTT value
+                
+            print(f"Synced with LZ server - Offset: {offset:.6f}s, RTT: {rtt*1000:.2f}ms")
+            
+            # Wait for next sync interval
+            time.sleep(TIME_SYNC_INTERVAL)
+            
+        except Exception as e:
+            print(f"Error syncing with LZ server: {e}")
+            # Close socket and try to reconnect next time
+            if lz_time_socket:
+                lz_time_socket.close()
+                lz_time_socket = None
+            time.sleep(1)  # Wait before retrying
+
+def get_synchronized_time():
+    """Returns the current time synchronized with the LZ server."""
+    with lock:
+        current_offset = time_offset
+    return time.time() + current_offset
 
 def maintain_lz_connection(lz_server_ip, wifi_ip):
     """Maintain connection to LZ server and handle reconnections"""
@@ -119,9 +136,10 @@ def maintain_lz_connection(lz_server_ip, wifi_ip):
             # Need to connect/reconnect
             connect_to_lz_time_server(lz_server_ip, wifi_ip)
             
-            # Start a new thread to listen for time sync from LZ server
+            # Start a new thread to handle time sync with LZ server
             sync_thread = threading.Thread(
-                target=listen_for_lz_sync,
+                target=sync_with_lz_server,
+                args=(lz_server_ip, wifi_ip),
                 daemon=True
             )
             sync_thread.start()
@@ -154,7 +172,7 @@ def setup_cloud_udp_socket(mobile_ip=None):
 
 def send_data_to_cloud(cloud_server_ip, mobile_ip=None):
     """Send data to cloud server over UDP"""
-    global cloud_udp_socket, running, num_requests, bytes_per_request
+    global cloud_udp_socket, running, num_requests, bytes_per_request, time_offset, current_sync_rtt
     
     # Set up UDP socket if not already done
     if cloud_udp_socket is None:
@@ -174,8 +192,8 @@ def send_data_to_cloud(cloud_server_ip, mobile_ip=None):
                 # Create request ID (1-based)
                 request_id = requests_sent + 1
                 
-                # Get current timestamp
-                timestamp = time.time()
+                # Get current synchronized timestamp
+                timestamp = get_synchronized_time()
                 
                 # Create header with request_id, timestamp, and size
                 # Format: !IdI = 4-byte unsigned int + 8-byte double + 4-byte unsigned int = 16 bytes total
@@ -183,7 +201,7 @@ def send_data_to_cloud(cloud_server_ip, mobile_ip=None):
                 
                 # Send header to cloud server
                 cloud_udp_socket.sendto(header, cloud_address)
-                print(f"Sent header to cloud server - Request ID: {request_id}, Timestamp: {timestamp:.6f}")
+                print(f"Sent header to cloud server - Request ID: {request_id}, Timestamp: {timestamp:.6f} (synchronized)")
                 
                 # Create payload of specified size if needed
                 if bytes_per_request > 0:
@@ -594,6 +612,7 @@ def main():
         
         print(f"Local client running, connecting to LZ server for time synchronization")
         print(f"Using Wi-Fi IP: {args.wifi_ip} for time synchronization with LZ server: {args.lz_server_ip}")
+        print(f"Time offset will be calculated and stored locally")
         
         # Start ping-pong UDP latency testing
         if not args.no_ping_pong:

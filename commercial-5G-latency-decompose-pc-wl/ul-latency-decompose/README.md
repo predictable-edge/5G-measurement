@@ -5,12 +5,13 @@ This system consists of three main components for measuring 5G uplink latency:
 ## Components
 
 ### 1. `lz_server.py` - Time Synchronization Server
-Provides centralized time synchronization service for accurate latency measurements.
+Provides timestamp service for time synchronization requests.
 
 **Features:**
-- TCP-based time synchronization
-- Calculates time offset between server and clients
+- TCP-based timestamp service
+- Responds to client requests with current server time
 - Supports multiple client connections
+- Simple stateless design
 
 **Usage:**
 ```bash
@@ -24,7 +25,7 @@ Receives UDP data packets and handles ping-pong measurements.
 - UDP data reception and analysis
 - Ping-pong latency measurements
 - Result logging with timestamps
-- No time synchronization (moved to lz_server.py)
+- No time synchronization functionality
 
 **Usage:**
 ```bash
@@ -36,6 +37,7 @@ Sends data to edge server and synchronizes time with LZ server.
 
 **Features:**
 - Time synchronization with LZ server via WiFi
+- Local calculation and storage of time offset
 - Data transmission to edge server via mobile interface
 - UDP ping-pong testing
 - Configurable payload sizes and intervals
@@ -92,9 +94,19 @@ python3 local_pc.py --cloud-ip <EDGE_SERVER_IP> --lz-ip <LZ_SERVER_IP> --wifi-ip
     +------Mobile-----> [Edge Server] (Data + Ping-Pong)
 ```
 
-## Key Changes
+## Time Synchronization Process
 
-- **Separated Time Synchronization**: Time sync functionality moved from `edge_server.py` to dedicated `lz_server.py`
+1. **Client-Initiated Sync**: Local PC initiates synchronization requests to LZ server
+2. **Timestamp Request**: Client sends a request to LZ server
+3. **Timestamp Response**: LZ server responds with current server timestamp
+4. **Local Offset Calculation**: Client calculates time offset and RTT locally
+5. **Local Storage**: Time offset is stored and maintained by the client
+6. **Synchronized Timestamps**: Client uses synchronized time for data transmission
+
+## Key Features
+
+- **Client-Side Time Management**: Time offset calculation and storage handled by local PC
+- **Stateless LZ Server**: LZ server simply provides timestamps without maintaining client state
 - **Enhanced Client Configuration**: Added `--lz-ip` parameter for time sync server
 - **Interface Binding**: Client can bind to specific network interfaces for different functions
 - **Simplified Edge Server**: Focuses only on data reception and ping-pong measurements
