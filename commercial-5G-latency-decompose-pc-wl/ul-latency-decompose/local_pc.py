@@ -6,16 +6,16 @@ import threading
 import argparse
 
 # Configuration
-CLOUD_SERVER_IP_PORT = 5000     # Port for timestamp service
 CLOUD_SERVER_UDP_PORT = 5002    # Cloud server UDP port for data transmission
+LZ_SERVER_TIME_SYNC_PORT = 5000 # LZ server port for time synchronization
 PING_PONG_PORT = 5001           # Port for UDP ping-pong measurements
-TIME_SYNC_INTERVAL = 1          # Expected sync interval from cloud server
+TIME_SYNC_INTERVAL = 1          # Expected sync interval from LZ server
 PACKET_INTERVAL = 1             # Time between sending packets (seconds)
 MAX_UDP_SEGMENT = 4096          # Maximum UDP segment size
 PING_INTERVAL = 0.02            # Interval for ping-pong in seconds (20ms)
 
 # Global variables
-cloud_time_socket = None        # TCP connection to cloud server for time sync
+lz_time_socket = None           # TCP connection to LZ server for time sync
 cloud_udp_socket = None         # UDP socket for cloud server communication
 ping_pong_socket = None         # UDP socket for ping-pong measurements
 running = True                  # Flag to control thread execution
@@ -31,43 +31,53 @@ ping_pong_avg_rtt = 0.0           # Average RTT
 ping_pong_count = 0               # Number of ping-pongs completed
 ping_pong_lock = threading.Lock() # Lock for ping-pong stats
 
-def connect_to_cloud_time_server(cloud_server_ip):
-    """Establish TCP connection to cloud server for time synchronization"""
-    global cloud_time_socket
+def connect_to_lz_time_server(lz_server_ip, wifi_ip):
+    """Establish TCP connection to LZ server for time synchronization"""
+    global lz_time_socket
     
     while True:
         try:
             # Create TCP socket
-            cloud_time_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            lz_time_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # Disable Nagle algorithm
-            cloud_time_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            cloud_time_socket.connect((cloud_server_ip, CLOUD_SERVER_IP_PORT))
-            print(f"Connected to cloud time server at {cloud_server_ip}:{CLOUD_SERVER_IP_PORT}")
+            lz_time_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            
+            # Bind to WiFi interface if specified
+            if wifi_ip:
+                try:
+                    lz_time_socket.bind((wifi_ip, 0))  # 0 means any available port
+                    print(f"Time sync socket bound to WiFi IP: {wifi_ip}")
+                except Exception as bind_err:
+                    print(f"Failed to bind time sync socket to {wifi_ip}: {bind_err}")
+                    print("Continuing without binding to specific interface")
+            
+            lz_time_socket.connect((lz_server_ip, LZ_SERVER_TIME_SYNC_PORT))
+            print(f"Connected to LZ time server at {lz_server_ip}:{LZ_SERVER_TIME_SYNC_PORT}")
             return
         except Exception as e:
-            print(f"Failed to connect to cloud time server: {e}")
+            print(f"Failed to connect to LZ time server: {e}")
             print("Retrying in 5 seconds...")
             time.sleep(5)
 
-def listen_for_cloud_sync():
-    """Listen for time sync packets from cloud server and respond"""
-    global cloud_time_socket, running
+def listen_for_lz_sync():
+    """Listen for time sync packets from LZ server and respond"""
+    global lz_time_socket, running
     
     try:
         while running:
             try:
-                # Wait for timestamp from cloud server
-                data = cloud_time_socket.recv(8)  # Expect an 8-byte double
+                # Wait for timestamp from LZ server
+                data = lz_time_socket.recv(8)  # Expect an 8-byte double
                 if not data or len(data) < 8:
                     # Connection closed or invalid data
                     if not data:
-                        print("Cloud server connection closed, reconnecting...")
+                        print("LZ server connection closed, reconnecting...")
                     else:
-                        print(f"Received invalid data from cloud server: {len(data)} bytes, expected 8")
+                        print(f"Received invalid data from LZ server: {len(data)} bytes, expected 8")
                     
                     # Try to reconnect
-                    cloud_time_socket.close()
-                    cloud_time_socket = None
+                    lz_time_socket.close()
+                    lz_time_socket = None
                     break
                 
                 # Unpack server timestamp
@@ -76,42 +86,42 @@ def listen_for_cloud_sync():
                 # Send our current time back to server
                 client_timestamp = time.time()
                 response = struct.pack('!d', client_timestamp)
-                cloud_time_socket.sendall(response)
+                lz_time_socket.sendall(response)
                 
-                print(f"Received sync from cloud - Server time: {server_timestamp:.6f}, responded with: {client_timestamp:.6f}")
+                print(f"Received sync from LZ server - Server time: {server_timestamp:.6f}, responded with: {client_timestamp:.6f}")
                 
             except socket.timeout:
                 # Socket timeout, just continue the loop
                 continue
             except ConnectionError as e:
-                print(f"Connection error with cloud server: {e}")
-                cloud_time_socket.close()
-                cloud_time_socket = None
+                print(f"Connection error with LZ server: {e}")
+                lz_time_socket.close()
+                lz_time_socket = None
                 break
             except Exception as e:
-                print(f"Error handling cloud sync: {e}")
+                print(f"Error handling LZ sync: {e}")
                 time.sleep(1)  # Avoid tight loop
     
     except Exception as e:
-        print(f"Error in cloud sync listener: {e}")
+        print(f"Error in LZ sync listener: {e}")
         
     finally:
         # Handle reconnection in the main thread
-        if not cloud_time_socket and running:
-            print("Cloud sync listener exited, will reconnect")
+        if not lz_time_socket and running:
+            print("LZ sync listener exited, will reconnect")
 
-def maintain_cloud_connection(cloud_server_ip):
-    """Maintain connection to cloud server and handle reconnections"""
-    global cloud_time_socket, running
+def maintain_lz_connection(lz_server_ip, wifi_ip):
+    """Maintain connection to LZ server and handle reconnections"""
+    global lz_time_socket, running
     
     while running:
-        if cloud_time_socket is None:
+        if lz_time_socket is None:
             # Need to connect/reconnect
-            connect_to_cloud_time_server(cloud_server_ip)
+            connect_to_lz_time_server(lz_server_ip, wifi_ip)
             
-            # Start a new thread to listen for time sync from cloud
+            # Start a new thread to listen for time sync from LZ server
             sync_thread = threading.Thread(
-                target=listen_for_cloud_sync,
+                target=listen_for_lz_sync,
                 daemon=True
             )
             sync_thread.start()
@@ -503,12 +513,14 @@ def ping_pong_client(cloud_server_ip, mobile_ip=None):
         return None, None, None
 
 def main():
-    global cloud_time_socket, cloud_udp_socket, running, num_requests, bytes_per_request, PACKET_INTERVAL, ping_pong_socket
+    global lz_time_socket, cloud_udp_socket, running, num_requests, bytes_per_request, PACKET_INTERVAL, ping_pong_socket
     
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Time synchronization and data transmission client')
     parser.add_argument('--cloud-ip', dest='cloud_server_ip', required=True,
                         help='IP address of the cloud server')
+    parser.add_argument('--lz-ip', dest='lz_server_ip', required=True,
+                        help='IP address of the LZ server for time synchronization')
     parser.add_argument('--mobile-ip', dest='mobile_ip', 
                         help='Mobile IP address to bind for UDP data communication (required, format: x.x.x.x)')
     parser.add_argument('--wifi-ip', dest='wifi_ip', 
@@ -533,7 +545,7 @@ def main():
             for iface, ip in interfaces:
                 print(f"  {iface}: {ip}")
             print("\nExample usage:")
-            print("  python3 local_pc.py --cloud-ip 192.168.1.100 --wifi-ip 192.168.1.5 --mobile-ip 10.0.0.5")
+            print("  python3 local_pc.py --cloud-ip 192.168.1.100 --lz-ip 192.168.1.200 --wifi-ip 192.168.1.5 --mobile-ip 10.0.0.5")
         else:
             print("No network interfaces found or unable to determine interfaces")
         return
@@ -541,6 +553,9 @@ def main():
     # Check required arguments
     if not args.cloud_server_ip:
         parser.error("--cloud-ip is required. Please specify the IP address of the cloud server.")
+    
+    if not args.lz_server_ip:
+        parser.error("--lz-ip is required. Please specify the IP address of the LZ server for time synchronization.")
     
     if not args.wifi_ip:
         parser.error("--wifi-ip is required. Please specify the IP address of your Wi-Fi interface.\n"
@@ -569,16 +584,16 @@ def main():
     PACKET_INTERVAL = args.interval / 1000.0
     
     try:
-        # Start thread to maintain cloud server connection for time sync
-        cloud_thread = threading.Thread(
-            target=maintain_cloud_connection,
-            args=(args.cloud_server_ip,),
+        # Start thread to maintain LZ server connection for time sync
+        lz_thread = threading.Thread(
+            target=maintain_lz_connection,
+            args=(args.lz_server_ip, args.wifi_ip),
             daemon=True
         )
-        cloud_thread.start()
+        lz_thread.start()
         
-        print(f"Local client running, responding to time sync requests from cloud server")
-        print(f"Using Wi-Fi IP: {args.wifi_ip} for time synchronization")
+        print(f"Local client running, connecting to LZ server for time synchronization")
+        print(f"Using Wi-Fi IP: {args.wifi_ip} for time synchronization with LZ server: {args.lz_server_ip}")
         
         # Start ping-pong UDP latency testing
         if not args.no_ping_pong:
@@ -611,8 +626,8 @@ def main():
             running = False
     finally:
         # Close connections
-        if cloud_time_socket:
-            cloud_time_socket.close()
+        if lz_time_socket:
+            lz_time_socket.close()
         if cloud_udp_socket:
             cloud_udp_socket.close()
         if ping_pong_socket:

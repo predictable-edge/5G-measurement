@@ -6,30 +6,24 @@ import threading
 import datetime
 
 # Configuration
-SERVER_IP = '0.0.0.0'  # Listen on all interfaces
-SERVER_SYNC_PORT = 5000     # Port for timestamp service (TCP)
-PHONE_UDP_PORT = 5002       # Port for receiving data from phone client (UDP)
-TIME_SYNC_INTERVAL = 1      # Send sync packets every 1 second
-MAX_UDP_SEGMENT = 4096      # Maximum UDP segment size
-UDP_BUFFER_SIZE = 4194304   # Buffer size for UDP socket (4MB)
-PING_PONG_PORT = 5001       # Port for UDP ping-pong measurements
+SERVER_IP = '0.0.0.0'           # Listen on all interfaces
+PHONE_UDP_PORT = 5002           # Port for receiving data from phone client (UDP)
+MAX_UDP_SEGMENT = 4096          # Maximum UDP segment size
+UDP_BUFFER_SIZE = 4194304       # Buffer size for UDP socket (4MB)
+PING_PONG_PORT = 5001           # Port for UDP ping-pong measurements
 
 # Global variables
-client_socket = None        # Socket for connected client
-running = True              # Flag to control thread execution
-time_offset = 0.0           # Global time offset between server and client
-last_sync_time = 0          # Last time we synced
-client_rtt = 0.0            # Round trip time with client
-results_file = None         # File to save results
-results_filename = None     # Filename for results
-is_file_created = False     # Flag to indicate if results file is created
-expected_bytes_size = 0     # Size of data packets for filename
-result_counter = 0          # Counter for sequential result indices
+running = True                  # Flag to control thread execution
+results_file = None             # File to save results
+results_filename = None         # Filename for results
+is_file_created = False         # Flag to indicate if results file is created
+expected_bytes_size = 0         # Size of data packets for filename
+result_counter = 0              # Counter for sequential result indices
 
 # Data structures for UDP requests from phone client
-pending_requests = {}       # Dictionary to track requests that are being processed
-completed_requests = {}     # Dictionary to store timing info for completed requests
-request_lock = threading.Lock()  # Lock for thread-safe access to request dictionaries
+pending_requests = {}           # Dictionary to track requests that are being processed
+completed_requests = {}         # Dictionary to store timing info for completed requests
+request_lock = threading.Lock() # Lock for thread-safe access to request dictionaries
 
 def init_results_file(payload_size):
     """Initialize the results file with headers"""
@@ -48,7 +42,7 @@ def init_results_file(payload_size):
         results_filename = f"ul_udp_bytes{payload_size}_{timestamp}.txt"
         
         results_file = open(results_filename, "w")
-        results_file.write(f"{'index':<6s}  {'ul_delay_ms':<12s}  {'duration_ms':<12s}  {'packet_size':<10s}  {'sync_rtt_ms':<10s}\n")
+        results_file.write(f"{'index':<6s}  {'ul_delay_ms':<12s}  {'duration_ms':<12s}  {'packet_size':<10s}\n")
         results_file.flush()
         print(f"Results file initialized: {results_filename}")
         is_file_created = True
@@ -56,7 +50,7 @@ def init_results_file(payload_size):
         print(f"Error initializing results file: {e}")
         results_file = None
 
-def save_request_result(transmission_delay_ms, total_transfer_time_ms, packet_size, rtt_ms):
+def save_request_result(transmission_delay_ms, total_transfer_time_ms, packet_size):
     """Save a request result to the results file using a sequential index"""
     global results_file, result_counter
     
@@ -68,107 +62,14 @@ def save_request_result(transmission_delay_ms, total_transfer_time_ms, packet_si
         result_counter += 1
         
         # Write formatted result to file using the counter as index
-        results_file.write(f"{result_counter:<6d}  {transmission_delay_ms:<12.2f}  {total_transfer_time_ms:<12.2f}  {packet_size:<10d}  {rtt_ms:<10.2f}\n")
+        results_file.write(f"{result_counter:<6d}  {transmission_delay_ms:<12.2f}  {total_transfer_time_ms:<12.2f}  {packet_size:<10d}\n")
         results_file.flush()
     except Exception as e:
         print(f"Error saving result to file: {e}")
 
-def handle_client(client_sock, client_address):
-    """Handle communication with a connected client using TCP for time synchronization"""
-    global client_socket, time_offset, last_sync_time, client_rtt
-    
-    # Store the client socket globally
-    client_socket = client_sock
-    
-    try:
-        print(f"New client connection from {client_address}")
-        
-        # Start time sync with client
-        sync_thread = threading.Thread(target=sync_time_with_client, args=(client_sock, client_address))
-        sync_thread.daemon = True
-        sync_thread.start()
-        
-        # Keep connection alive
-        while running:
-            # Check if the socket is still connected
-            try:
-                # Try to send a small packet (0 bytes) with MSG_PEEK to check connection
-                client_sock.recv(1, socket.MSG_PEEK)
-            except ConnectionError:
-                print(f"Connection lost with {client_address}")
-                break
-            
-            # Sleep to avoid busy waiting
-            time.sleep(0.1)
-    
-    except ConnectionResetError:
-        print(f"Connection reset by {client_address}")
-    except Exception as e:
-        print(f"Error handling client {client_address}: {e}")
-    finally:
-        # Reset globals when client disconnects
-        if client_socket == client_sock:
-            client_socket = None
-        
-        # Close the connection
-        client_sock.close()
-        print(f"Connection closed with client {client_address}")
-
-def sync_time_with_client(client_sock, client_address):
-    """Send time sync packets to client and calculate offset"""
-    global time_offset, last_sync_time, client_rtt
-    
-    while running and client_sock == client_socket:
-        try:
-            # Get current time
-            send_time = time.time()
-            
-            # Pack timestamp into bytes
-            timestamp_bytes = struct.pack('!d', send_time)
-            
-            # Send timestamp to client
-            client_sock.sendall(timestamp_bytes)
-            
-            # Wait for response
-            response = client_sock.recv(8)  # Expecting an 8-byte double
-            
-            # Record receive time
-            receive_time = time.time()
-            
-            if len(response) == 8:
-                # Unpack client's timestamp
-                client_timestamp = struct.unpack('!d', response)[0]
-                
-                # Calculate RTT
-                rtt = receive_time - send_time
-                
-                # Calculate one-way delay (assuming symmetric network)
-                one_way_delay = rtt / 2
-                
-                # Calculate time offset (server time - client time)
-                # Adjusted for the one-way delay
-                client_time_at_receive = client_timestamp + one_way_delay
-                offset = receive_time - client_time_at_receive
-                
-                # Update global variables
-                time_offset = offset
-                last_sync_time = receive_time
-                client_rtt = rtt
-                
-                print(f"Time sync with {client_address} - Offset: {offset:.6f}s, RTT: {rtt*1000:.2f}ms")
-        
-        except ConnectionError:
-            # Connection issue, will be cleaned up by the main client handler
-            break
-        except Exception as e:
-            print(f"Error syncing time with {client_address}: {e}")
-        
-        # Wait for next sync interval
-        time.sleep(TIME_SYNC_INTERVAL)
-
 def handle_phone_udp_data():
     """Listen for UDP data from phone client and track timing information"""
-    global running, pending_requests, completed_requests, time_offset, client_rtt, is_file_created
+    global running, pending_requests, completed_requests, is_file_created
     
     # Create UDP socket
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -210,28 +111,20 @@ def handle_phone_udp_data():
                         # Record reception time
                         header_recv_time = time.time()
                         
-                        # Get current RTT value to use for this request
-                        current_rtt = client_rtt
-                        
-                        # Calculate transmission delay with time_offset correction
-                        # Correct the server_timestamp using the time_offset
-                        corrected_server_time = server_timestamp + time_offset
-                        
-                        # Calculate transmission delay (current time - corrected timestamp)
-                        transmission_delay = header_recv_time - corrected_server_time
+                        # Calculate transmission delay (no time offset correction needed now)
+                        transmission_delay = header_recv_time - server_timestamp
                         
                         with request_lock:
                             # Store request info
                             pending_requests[request_id] = {
-                                'corrected_server_time': corrected_server_time,
+                                'server_time': server_timestamp,
                                 'header_recv_time': header_recv_time,
                                 'transmission_delay': transmission_delay,
                                 'expected_payload_size': expected_payload_size,
                                 'segments_received': 0,
                                 'total_bytes': 0,
                                 'is_complete': False,
-                                'sender': addr,
-                                'sync_rtt': current_rtt  # Store the RTT used for time_offset correction
+                                'sender': addr
                             }
                         
                         print(f"Request ID: {request_id}, Expected payload size: {expected_payload_size} bytes")
@@ -248,9 +141,6 @@ def handle_phone_udp_data():
                                     first_segment_delay_ms = 0  # No segments
                                     total_transfer_time_ms = 0  # No transfer time
                                     
-                                    # Get the RTT used for this request
-                                    rtt_ms = request['sync_rtt'] * 1000
-                                    
                                     # Mark as complete
                                     request['is_complete'] = True
                                     request['completion_time'] = current_time
@@ -260,18 +150,16 @@ def handle_phone_udp_data():
                                     print(f"Request ID {request_id} completed:")
                                     print(f"  Segments received: {request['segments_received']}")
                                     print(f"  Total bytes: {request['total_bytes']}")
-                                    print(f"  Transmission delay (with offset correction): {transmission_delay_ms:.2f} ms")
+                                    print(f"  Transmission delay: {transmission_delay_ms:.2f} ms")
                                     print(f"  First segment delay: {first_segment_delay_ms:.2f} ms")
                                     print(f"  Total transfer time: {total_transfer_time_ms:.2f} ms")
-                                    print(f"  Sync RTT: {rtt_ms:.2f} ms")
                                     print("--------------------------------")
                                     
                                     # Save results to file
                                     save_request_result(
                                         transmission_delay_ms,
                                         total_transfer_time_ms,
-                                        request['total_bytes'],
-                                        rtt_ms
+                                        request['total_bytes']
                                     )
                                     
                                     # Move to completed requests
@@ -322,16 +210,13 @@ def handle_phone_udp_data():
                                     transmission_delay_ms = request['transmission_delay'] * 1000
                                     
                                     if 'first_segment_time' in request:
-                                        first_segment_delay = request['first_segment_time'] - request['corrected_server_time']
+                                        first_segment_delay = request['first_segment_time'] - request['server_time']
                                         first_segment_delay_ms = first_segment_delay * 1000
                                     else:
                                         first_segment_delay_ms = 0
                                         
                                     total_transfer_time = request['last_segment_time'] - request['header_recv_time']
                                     total_transfer_time_ms = total_transfer_time * 1000
-                                    
-                                    # Get the RTT used for this request
-                                    rtt_ms = request['sync_rtt'] * 1000
                                     
                                     # Mark as complete
                                     request['is_complete'] = True
@@ -342,18 +227,16 @@ def handle_phone_udp_data():
                                     print(f"Request ID {request_id} completed:")
                                     print(f"  Segments received: {request['segments_received']}")
                                     print(f"  Total bytes: {request['total_bytes']}")
-                                    print(f"  Transmission delay (with offset correction): {transmission_delay_ms:.2f} ms")
+                                    print(f"  Transmission delay: {transmission_delay_ms:.2f} ms")
                                     print(f"  First segment delay: {first_segment_delay_ms:.2f} ms")
                                     print(f"  Total transfer time: {total_transfer_time_ms:.2f} ms")
-                                    print(f"  Sync RTT: {rtt_ms:.2f} ms")
                                     print("--------------------------------")
                                     
                                     # Save results to file
                                     save_request_result(
                                         transmission_delay_ms,
                                         total_transfer_time_ms,
-                                        request['total_bytes'],
-                                        rtt_ms
+                                        request['total_bytes']
                                     )
                                     
                                     # Move to completed requests
@@ -423,38 +306,6 @@ def handle_ping_pong_udp():
         if 'ping_pong_socket' in locals():
             ping_pong_socket.close()
 
-def listen_for_clients():
-    """Listen for client connections on SERVER_SYNC_PORT using TCP"""
-    # Create TCP socket for clients
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    # Disable Nagle algorithm
-    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    server_socket.bind((SERVER_IP, SERVER_SYNC_PORT))
-    server_socket.listen(5)  # Allow multiple connections
-    
-    print(f"Server listening for clients on TCP {SERVER_IP}:{SERVER_SYNC_PORT}")
-    
-    try:
-        while running:
-            # Accept new connection (old connection will be closed if a new one comes in)
-            client_sock, client_address = server_socket.accept()
-            # Disable Nagle algorithm for the client socket too
-            client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            
-            # Handle this client in a new thread
-            client_thread = threading.Thread(
-                target=handle_client,
-                args=(client_sock, client_address)
-            )
-            client_thread.daemon = True
-            client_thread.start()
-    
-    except KeyboardInterrupt:
-        print("Server shutting down...")
-    finally:
-        server_socket.close()
-
 def main():
     global running, results_file, result_counter, is_file_created
     
@@ -463,11 +314,6 @@ def main():
     
     # File will be created on first valid packet
     is_file_created = False
-    
-    # Start client listener thread (TCP)
-    client_thread = threading.Thread(target=listen_for_clients)
-    client_thread.daemon = True
-    client_thread.start()
     
     # Start UDP listener thread for phone client data
     udp_thread = threading.Thread(target=handle_phone_udp_data)
@@ -479,16 +325,17 @@ def main():
     ping_pong_thread.daemon = True
     ping_pong_thread.start()
     
-    print(f"Server running with time synchronization initiated every {TIME_SYNC_INTERVAL}s")
-    print(f"Time offset stored as global variable")
-    print(f"UDP listener active on port {PHONE_UDP_PORT} for phone client data")
+    print(f"Edge server running - ready to receive data and handle ping-pong requests")
+    print(f"UDP data listener active on port {PHONE_UDP_PORT} for phone client data")
+    print(f"Ping-pong handler active on port {PING_PONG_PORT}")
+    print("Note: Time synchronization functionality has been moved to lz_server.py")
     
     # Keep main thread alive
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Server shutting down...")
+        print("Edge server shutting down...")
         running = False
         
         # Close results file
