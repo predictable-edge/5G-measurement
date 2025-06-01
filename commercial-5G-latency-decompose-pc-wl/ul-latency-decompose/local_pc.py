@@ -547,7 +547,7 @@ def main():
                         help='Mobile IP address to bind for UDP data communication (required, format: x.x.x.x)')
     parser.add_argument('--wifi-ip', dest='wifi_ip', 
                         help='Wi-Fi IP address to bind for time synchronization (required, format: x.x.x.x)')
-    parser.add_argument('--requests', type=int, default=10,
+    parser.add_argument('--requests', type=int, default=100,
                         help='Number of requests to send to cloud server (default: 10)')
     parser.add_argument('--bytes', type=int, default=1,
                         help='Size in bytes per request (default: 1)')
