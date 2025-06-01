@@ -458,7 +458,7 @@ void* pull_stream(void* args) {
             int64_t pull_time_ms = get_current_time_us() / 1000;
 
             
-            if (embedded_frame_id < 10000) {
+            if (embedded_frame_id < 10000 && embedded_frame_id > 0) {
                 std::cout << "Frame " << embedded_frame_id << " pulled at " << get_current_time_us() << std::endl;
 
                 // Add entry to TimingLogger
