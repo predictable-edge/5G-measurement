@@ -120,4 +120,19 @@ Results include:
 - Index
 - Uplink delay (ms)
 - Transfer duration (ms)  
-- Packet size (bytes) 
+- Packet size (bytes)
+- Sync RTT (ms) - Round-trip time used for time synchronization
+
+## Data Protocol
+
+### Header Format
+The client sends a header packet with the following structure:
+- **Request ID** (4 bytes): Unique identifier for the request
+- **Timestamp** (8 bytes): Synchronized timestamp from client
+- **Payload Size** (4 bytes): Expected size of data payload  
+- **Sync RTT** (8 bytes): Round-trip time used for time synchronization
+
+Total header size: 24 bytes
+
+### Backward Compatibility
+The edge server supports both old (20 bytes) and new (24 bytes) header formats for backward compatibility. 

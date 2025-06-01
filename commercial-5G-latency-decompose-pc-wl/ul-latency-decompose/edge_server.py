@@ -42,7 +42,7 @@ def init_results_file(payload_size):
         results_filename = f"ul_udp_bytes{payload_size}_{timestamp}.txt"
         
         results_file = open(results_filename, "w")
-        results_file.write(f"{'index':<6s}  {'ul_delay_ms':<12s}  {'duration_ms':<12s}  {'packet_size':<10s}\n")
+        results_file.write(f"{'index':<6s}  {'ul_delay_ms':<12s}  {'duration_ms':<12s}  {'packet_size':<10s}  {'sync_rtt_ms':<10s}\n")
         results_file.flush()
         print(f"Results file initialized: {results_filename}")
         is_file_created = True
@@ -50,7 +50,7 @@ def init_results_file(payload_size):
         print(f"Error initializing results file: {e}")
         results_file = None
 
-def save_request_result(transmission_delay_ms, total_transfer_time_ms, packet_size):
+def save_request_result(transmission_delay_ms, total_transfer_time_ms, packet_size, sync_rtt_ms):
     """Save a request result to the results file using a sequential index"""
     global results_file, result_counter
     
@@ -62,7 +62,7 @@ def save_request_result(transmission_delay_ms, total_transfer_time_ms, packet_si
         result_counter += 1
         
         # Write formatted result to file using the counter as index
-        results_file.write(f"{result_counter:<6d}  {transmission_delay_ms:<12.2f}  {total_transfer_time_ms:<12.2f}  {packet_size:<10d}\n")
+        results_file.write(f"{result_counter:<6d}  {transmission_delay_ms:<12.2f}  {total_transfer_time_ms:<12.2f}  {packet_size:<10d}  {sync_rtt_ms:<10.2f}\n")
         results_file.flush()
     except Exception as e:
         print(f"Error saving result to file: {e}")
@@ -90,23 +90,19 @@ def handle_phone_udp_data():
                 data, addr = udp_socket.recvfrom(MAX_UDP_SEGMENT)
                 
                 # Check if this is a header or a data segment
-                if len(data) >= 12 and len(data) <= 16:  # Header (12-16 bytes: request_id + timestamp + optional size)
+                if len(data) >= 20 and len(data) <= 24:  # Header (20-24 bytes: request_id + timestamp + optional size + optional sync_rtt)
                     try:
-                        # Parse header data
-                        request_id, server_timestamp = struct.unpack('!Id', data[:12])
+                        # Parse header data - try new format first (24 bytes with sync_rtt)
+                        if len(data) >= 24:
+                            request_id, server_timestamp, expected_payload_size, sync_rtt = struct.unpack('!IdId', data[:24])
+                        else:
+                            # Fallback to old format (20 bytes without sync_rtt)
+                            request_id, server_timestamp, expected_payload_size = struct.unpack('!IdI', data[:20])
+                            sync_rtt = 0.0  # Default value for backward compatibility
                         
-                        # Extract expected payload size if available (in bytes 12-16)
-                        expected_payload_size = 0
-                        if len(data) >= 16:
-                            try:
-                                expected_payload_size = struct.unpack('!I', data[12:16])[0]
-                                
-                                # Initialize results file if it hasn't been created yet and we have a valid payload size
-                                if not is_file_created and expected_payload_size >= 0:
-                                    init_results_file(expected_payload_size)
-                            except struct.error:
-                                # If there's an error parsing, assume 0
-                                pass
+                        # Initialize results file if it hasn't been created yet and we have a valid payload size
+                        if not is_file_created and expected_payload_size >= 0:
+                            init_results_file(expected_payload_size)
                         
                         # Record reception time
                         header_recv_time = time.time()
@@ -121,13 +117,14 @@ def handle_phone_udp_data():
                                 'header_recv_time': header_recv_time,
                                 'transmission_delay': transmission_delay,
                                 'expected_payload_size': expected_payload_size,
+                                'sync_rtt': sync_rtt,
                                 'segments_received': 0,
                                 'total_bytes': 0,
                                 'is_complete': False,
                                 'sender': addr
                             }
                         
-                        print(f"Request ID: {request_id}, Expected payload size: {expected_payload_size} bytes")
+                        print(f"Request ID: {request_id}, Expected payload size: {expected_payload_size} bytes, Sync RTT: {sync_rtt*1000:.2f}ms")
                         
                         # If expected payload size is 0, mark the request as complete immediately
                         if expected_payload_size == 0:
@@ -140,6 +137,7 @@ def handle_phone_udp_data():
                                     transmission_delay_ms = request['transmission_delay'] * 1000
                                     first_segment_delay_ms = 0  # No segments
                                     total_transfer_time_ms = 0  # No transfer time
+                                    sync_rtt_ms = request['sync_rtt'] * 1000
                                     
                                     # Mark as complete
                                     request['is_complete'] = True
@@ -153,13 +151,15 @@ def handle_phone_udp_data():
                                     print(f"  Transmission delay: {transmission_delay_ms:.2f} ms")
                                     print(f"  First segment delay: {first_segment_delay_ms:.2f} ms")
                                     print(f"  Total transfer time: {total_transfer_time_ms:.2f} ms")
+                                    print(f"  Sync RTT: {sync_rtt_ms:.2f} ms")
                                     print("--------------------------------")
                                     
                                     # Save results to file
                                     save_request_result(
                                         transmission_delay_ms,
                                         total_transfer_time_ms,
-                                        request['total_bytes']
+                                        request['total_bytes'],
+                                        sync_rtt_ms
                                     )
                                     
                                     # Move to completed requests
@@ -217,6 +217,7 @@ def handle_phone_udp_data():
                                         
                                     total_transfer_time = request['last_segment_time'] - request['header_recv_time']
                                     total_transfer_time_ms = total_transfer_time * 1000
+                                    sync_rtt_ms = request['sync_rtt'] * 1000
                                     
                                     # Mark as complete
                                     request['is_complete'] = True
@@ -230,13 +231,15 @@ def handle_phone_udp_data():
                                     print(f"  Transmission delay: {transmission_delay_ms:.2f} ms")
                                     print(f"  First segment delay: {first_segment_delay_ms:.2f} ms")
                                     print(f"  Total transfer time: {total_transfer_time_ms:.2f} ms")
+                                    print(f"  Sync RTT: {sync_rtt_ms:.2f} ms")
                                     print("--------------------------------")
                                     
                                     # Save results to file
                                     save_request_result(
                                         transmission_delay_ms,
                                         total_transfer_time_ms,
-                                        request['total_bytes']
+                                        request['total_bytes'],
+                                        sync_rtt_ms
                                     )
                                     
                                     # Move to completed requests

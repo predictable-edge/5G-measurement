@@ -192,16 +192,20 @@ def send_data_to_cloud(cloud_server_ip, mobile_ip=None):
                 # Create request ID (1-based)
                 request_id = requests_sent + 1
                 
-                # Get current synchronized timestamp
+                # Get current synchronized timestamp and sync RTT
                 timestamp = get_synchronized_time()
                 
-                # Create header with request_id, timestamp, and size
-                # Format: !IdI = 4-byte unsigned int + 8-byte double + 4-byte unsigned int = 16 bytes total
-                header = struct.pack('!IdI', request_id, timestamp, bytes_per_request)
+                # Get current sync RTT value
+                with lock:
+                    sync_rtt = current_sync_rtt
+                
+                # Create header with request_id, timestamp, size, and sync_rtt
+                # Format: !IdId = 4-byte unsigned int + 8-byte double + 4-byte unsigned int + 8-byte double = 24 bytes total
+                header = struct.pack('!IdId', request_id, timestamp, bytes_per_request, sync_rtt)
                 
                 # Send header to cloud server
                 cloud_udp_socket.sendto(header, cloud_address)
-                print(f"Sent header to cloud server - Request ID: {request_id}, Timestamp: {timestamp:.6f} (synchronized)")
+                print(f"Sent header to cloud server - Request ID: {request_id}, Timestamp: {timestamp:.6f} (synchronized), Sync RTT: {sync_rtt*1000:.2f}ms")
                 
                 # Create payload of specified size if needed
                 if bytes_per_request > 0:
