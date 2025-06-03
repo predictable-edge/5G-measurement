@@ -378,14 +378,14 @@ Note:
         if not args.quiet:
             print(f"Using random seed: {args.seed}")
     
-    # Check for root user (not recommended)
-    if os.geteuid() == 0:
-        print("Warning: Running as root is not recommended")
-        print("Press Enter to continue or Ctrl+C to cancel...")
-        try:
-            input()
-        except KeyboardInterrupt:
-            sys.exit(0)
+    # Check for root user (removed confirmation for automated use)
+    # if os.geteuid() == 0:
+    #     print("Warning: Running as root is not recommended")
+    #     print("Press Enter to continue or Ctrl+C to cancel...")
+    #     try:
+    #         input()
+    #     except KeyboardInterrupt:
+    #         sys.exit(0)
     
     # Check dependencies
     try:
