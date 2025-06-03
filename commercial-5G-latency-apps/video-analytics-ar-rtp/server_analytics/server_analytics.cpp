@@ -352,7 +352,7 @@ bool initialize_decoder(const char* input_url, DecoderInfo& decoder_info) {
     decoder_info.input_fmt_ctx = nullptr;
     AVDictionary* format_opts = nullptr;
     av_dict_set(&format_opts, "buffer_size", "8192000", 0);      // Increase buffer size
-    av_dict_set(&format_opts, "max_delay", "500000", 0);         // 500ms max delay
+    av_dict_set(&format_opts, "max_delay", "200000", 0);         // 200ms max delay
     av_dict_set(&format_opts, "reorder_queue_size", "100000", 0);    // Reorder queue size
     av_dict_set(&format_opts, "jitter_buffer_size", "100000", 0);    // Jitter buffer size
     av_dict_set(&format_opts, "stimeout", "5000000", 0);         // Socket timeout 5 seconds
