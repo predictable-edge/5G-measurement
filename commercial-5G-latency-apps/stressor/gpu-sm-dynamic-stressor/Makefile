@@ -1,29 +1,28 @@
 # GPU SM Usage Control Tool Makefile
 
 # Compiler settings and flags
-NVCC = nvcc
-CFLAGS = -std=c++14 -O2 -Xcompiler -pthread
-LIBS = -lcuda -lcudart -lm -lpthread
-
-# Target file
+CXX = nvcc
 TARGET = gpu_sm_stressor
 SOURCE = gpu_sm_stressor.cu
 
-# Default target
+# CUDA architecture settings (adjust based on your GPU)
+CUDA_ARCH = -arch=sm_75
+
+# Compiler flags
+CXXFLAGS = -O3 -std=c++11 -Xcompiler -fPIC -Xcompiler -pthread
+LDFLAGS = -lcuda -lcudart -lm
+
+# Build targets
 all: $(TARGET)
 
-# Compile main program
 $(TARGET): $(SOURCE)
-	$(NVCC) $(CFLAGS) -o $(TARGET) $(SOURCE) $(LIBS)
+	$(CXX) $(CUDA_ARCH) $(CXXFLAGS) -o $(TARGET) $(SOURCE) $(LDFLAGS)
 
-# Clean compiled files
 clean:
 	rm -f $(TARGET)
 
-# Install to system path (optional)
 install: $(TARGET)
-	sudo cp $(TARGET) /usr/local/bin/
-	sudo chmod +x /usr/local/bin/$(TARGET)
+	cp $(TARGET) /usr/local/bin/
 
 # Uninstall
 uninstall:
@@ -31,25 +30,19 @@ uninstall:
 
 # Run test (50% usage)
 test: $(TARGET)
-	./$(TARGET) 50
+	./$(TARGET) -m 50
 
 # Show help
 help:
-	@echo "GPU SM Usage Control Tool Build Instructions:"
+	@echo "Available targets:"
+	@echo "  all     - Build the GPU SM stressor (default)"
+	@echo "  clean   - Remove built files"
+	@echo "  install - Install binary to /usr/local/bin"
+	@echo "  help    - Show this help message"
 	@echo ""
-	@echo "Build commands:"
-	@echo "  make          - Compile the program"
-	@echo "  make clean    - Clean compiled files"
-	@echo "  make install  - Install to system path"
-	@echo "  make test     - Run test (50% usage)"
-	@echo ""
-	@echo "Usage:"
-	@echo "  ./gpu_sm_stress <percentage 0-100>"
-	@echo "  Example: ./gpu_sm_stress 75"
-	@echo ""
-	@echo "Dependencies:"
-	@echo "  - NVIDIA GPU driver"
-	@echo "  - CUDA Toolkit"
-	@echo "  - GCC compiler"
+	@echo "Usage examples:"
+	@echo "  make                    # Build the program"
+	@echo "  ./gpu_sm_stressor -h    # Show program help"
+	@echo "  ./gpu_sm_stressor -m 70 -s 15 -i 1.0  # 70% mean load, 15% std dev"
 
 .PHONY: all clean install uninstall test help
