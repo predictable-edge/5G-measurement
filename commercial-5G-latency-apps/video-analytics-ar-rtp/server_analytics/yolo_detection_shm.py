@@ -359,7 +359,7 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
-    parser.add_argument('--model', type=str, default='yolov8m.pt',
+    parser.add_argument('--model', type=str, default='yolov8x.pt',
                       help='Path to YOLO model')
     parser.add_argument('--conf', type=float, default=0.3,
                       help='Confidence threshold')
