@@ -3,6 +3,8 @@ sudo apt install -y make g++ ffmpeg pkg-config python3-pip libzmq5-dev
 sudo apt install -y libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libswscale-dev libavdevice-dev
 sudo apt install -y stress-ng
 pip install numpy opencv-python ultralytics posix_ipc zmq
+pip install psutil
+pip3 install psutil
 
 # Use whole GPU but not Grid GPU
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
