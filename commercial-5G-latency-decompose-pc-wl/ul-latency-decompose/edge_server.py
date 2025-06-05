@@ -8,7 +8,7 @@ import datetime
 # Configuration
 SERVER_IP = '0.0.0.0'           # Listen on all interfaces
 PHONE_UDP_PORT = 5002           # Port for receiving data from phone client (UDP)
-MAX_UDP_SEGMENT = 4096          # Maximum UDP segment size
+MAX_UDP_SEGMENT = 1300          # Maximum UDP segment size
 UDP_BUFFER_SIZE = 4194304       # Buffer size for UDP socket (4MB)
 PING_PONG_PORT = 5001           # Port for UDP ping-pong measurements
 
