@@ -11,7 +11,7 @@ CLOUD_SERVER_UDP_PORT = 5002    # Cloud server UDP port for data transmission
 PING_PONG_PORT = 5001           # Port for UDP ping-pong measurements
 TIME_SYNC_INTERVAL = 1          # Expected sync interval from cloud server
 PACKET_INTERVAL = 1             # Time between sending packets (seconds)
-MAX_UDP_SEGMENT = 4096          # Maximum UDP segment size
+MAX_UDP_SEGMENT = 1300          # Maximum UDP segment size
 PING_INTERVAL = 0.02            # Interval for ping-pong in seconds (20ms)
 
 # Global variables
