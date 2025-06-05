@@ -5,7 +5,7 @@ import threading
 from collections import defaultdict
 
 # Maximum UDP packet size (practically safe)
-MAX_UDP_PACKET = 8192
+MAX_UDP_PACKET = 1300
 # UDP port for data communication
 UDP_PORT = 5000
 # Port for UDP ping-pong measurements
