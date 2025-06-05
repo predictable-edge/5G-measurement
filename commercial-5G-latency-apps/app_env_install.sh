@@ -12,6 +12,13 @@ sudo add-apt-repository ppa:graphics-drivers/ppa -y
 sudo dpkg -i cuda-keyring_1.0-1_all.deb
 sudo apt update
 
+sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+sudo apt update
+sudo apt install -y gcc-12 g++-12
+
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+
 sudo apt install -y nvidia-driver-560
 sudo apt install -y cuda-toolkit-12-6
 
