@@ -21,7 +21,7 @@ class TranscodingController:
     """Controller for managing transcoding and CPU stress processes"""
     
     def __init__(self, transcoding_args: list, frame_threshold: int, 
-                 stressor_args: list, verbose: bool = True):
+                 stressor_args: list, verbose: bool = True, enable_cpu_stressor: bool = True):
         """
         Initialize the transcoding controller
         
@@ -30,11 +30,13 @@ class TranscodingController:
             frame_threshold: Frame count threshold to start CPU stressor
             stressor_args: Arguments for CPU stressor
             verbose: Enable verbose output
+            enable_cpu_stressor: Enable CPU stressor functionality
         """
         self.transcoding_cmd = [TRANSCODING_EXECUTABLE] + transcoding_args
         self.frame_threshold = frame_threshold
         self.stressor_args = stressor_args
         self.verbose = verbose
+        self.enable_cpu_stressor = enable_cpu_stressor
         
         self.transcoding_process: Optional[subprocess.Popen] = None
         self.stressor_process: Optional[subprocess.Popen] = None
@@ -125,8 +127,10 @@ class TranscodingController:
                             frame_number = int(match.group(1))
                             self.max_frame_seen = max(self.max_frame_seen, frame_number)
                             
-                            # Start CPU stressor if threshold exceeded
-                            if frame_number >= self.frame_threshold and not self.stressor_started:
+                            # Start CPU stressor if threshold exceeded and CPU stressor is enabled
+                            if (self.enable_cpu_stressor and 
+                                frame_number >= self.frame_threshold and 
+                                not self.stressor_started):
                                 self._log(f"Frame {frame_number} >= threshold {self.frame_threshold}, starting CPU stressor")
                                 self._start_cpu_stressor()
                                 
@@ -153,7 +157,10 @@ class TranscodingController:
             self._log("=" * 60)
             self._log(f"Transcoding command: {' '.join(self.transcoding_cmd)}")
             self._log(f"Frame threshold: {self.frame_threshold}")
-            self._log(f"CPU stressor args: {' '.join(self.stressor_args) if self.stressor_args else 'default'}")
+            if self.enable_cpu_stressor:
+                self._log(f"CPU stressor args: {' '.join(self.stressor_args) if self.stressor_args else 'default'}")
+            else:
+                self._log("CPU stressor: DISABLED (only RTP input provided)")
             self._log("=" * 60)
             
             # Start transcoding process with new process group
@@ -200,7 +207,9 @@ class TranscodingController:
         self.running = False
         
         # Stop CPU stressor process first (usually easier to kill)
-        if self.stressor_process and self.stressor_process.poll() is None:
+        if (self.enable_cpu_stressor and 
+            self.stressor_process and 
+            self.stressor_process.poll() is None):
             self._log("Stopping CPU stressor process...")
             try:
                 # Send SIGTERM to process group
@@ -235,9 +244,10 @@ class TranscodingController:
             # Kill any remaining server_transcoding processes
             subprocess.run(['pkill', '-f', 'server_transcoding'], 
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            # Kill any remaining stress-ng processes
-            subprocess.run(['pkill', '-f', 'stress-ng'], 
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Kill any remaining stress-ng processes only if CPU stressor was enabled
+            if self.enable_cpu_stressor:
+                subprocess.run(['pkill', '-f', 'stress-ng'], 
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
             pass
         
@@ -303,6 +313,10 @@ Note: The transcoding program may start multiple encoder threads for different r
         import shlex
         stressor_args = shlex.split(args.cpu_args.strip())
     
+    # Determine if CPU stressor should be enabled
+    # If only RTP input is provided (no extra args and no cpu args), disable CPU stressor
+    enable_cpu_stressor = bool(args.extra_args or args.cpu_args.strip())
+    
     # Check if transcoding executable exists
     if not os.path.isfile(TRANSCODING_EXECUTABLE):
         print(f"Error: Transcoding program not found: {TRANSCODING_EXECUTABLE}")
@@ -310,7 +324,8 @@ Note: The transcoding program may start multiple encoder threads for different r
         print("and that server_transcoding has been compiled.")
         sys.exit(1)
     
-    if not os.path.isfile('cpu_stressor.py'):
+    # Only check for cpu_stressor.py if CPU stressor is enabled
+    if enable_cpu_stressor and not os.path.isfile('cpu_stressor.py'):
         print("Error: cpu_stressor.py not found in current directory")
         sys.exit(1)
     
@@ -319,7 +334,10 @@ Note: The transcoding program may start multiple encoder threads for different r
         print("DRY RUN MODE - Commands that would be executed:")
         print(f"Transcoding: {TRANSCODING_EXECUTABLE} {' '.join(transcoding_args)}")
         print(f"Frame threshold: {args.threshold}")
-        print(f"CPU stressor: python3 cpu_stressor.py {' '.join(stressor_args)}")
+        if enable_cpu_stressor:
+            print(f"CPU stressor: python3 cpu_stressor.py {' '.join(stressor_args)}")
+        else:
+            print("CPU stressor: DISABLED (only RTP input provided)")
         sys.exit(0)
     
     # Create and run controller
@@ -327,7 +345,8 @@ Note: The transcoding program may start multiple encoder threads for different r
         transcoding_args=transcoding_args,
         frame_threshold=args.threshold,
         stressor_args=stressor_args,
-        verbose=not args.quiet
+        verbose=not args.quiet,
+        enable_cpu_stressor=enable_cpu_stressor
     )
     
     try:
