@@ -184,7 +184,9 @@ def send_data_to_phone_udp(server_socket, client_address, num_requests, interval
                 
                 # Create header with request ID, timestamp, packet size, and total segments
                 # Format: !IdII = 4-byte int (request ID) + 8-byte double + 4-byte unsigned int + 4-byte unsigned int = 20 bytes total
-                total_segments = (bytes_per_request + MAX_UDP_SEGMENT - 1) // MAX_UDP_SEGMENT if bytes_per_request > 0 else 0
+                # Calculate total segments based on actual segment size (MAX_UDP_SEGMENT - 4 for request ID)
+                segment_payload_size = MAX_UDP_SEGMENT - 4
+                total_segments = (bytes_per_request + segment_payload_size - 1) // segment_payload_size if bytes_per_request > 0 else 0
                 header = struct.pack('!IdII', request_id, current_time, bytes_per_request, total_segments)
                 
                 # Send header
