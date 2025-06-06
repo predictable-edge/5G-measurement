@@ -437,32 +437,32 @@ def receive_data_from_server_udp(cloud_server_address, num_requests, interval_ms
                 
                 # If we received all segments
                 if segments_received == total_segments:
-                    # if len(received_packet) == packet_size:
+                    if len(received_packet) == packet_size:
                         # Increment measurement counter
-                    measurement_count += 1
-                    
-                    # Calculate packet reception duration
-                    packet_end_time = time.time()
-                    duration_ms = (packet_end_time - packet_start_time) * 1000
-                    
-                    # Calculate total latency
-                    total_latency_ms = dl_transmission_delay*1000 + duration_ms
-                    
-                    print(f"Packet fully received for request ID {request_id}. Duration: {duration_ms:.2f} ms, Packet size: {packet_size} bytes")
-                    print(f"Total observed latency: {total_latency_ms:.2f} ms")
-                    
-                    # Save results to file with fixed-width format for better alignment
-                    if results_file:
-                        with lock:  # Use lock to avoid file corruption
-                            results_file.write(f"{measurement_count:<6d}  {dl_transmission_delay*1000:<12.2f}  {time_diff_ms:<14.2f}  {duration_ms:<12.2f}  {total_latency_ms:<12.2f}  {packet_size:<10d}  {sync_rtt*1000:<10.2f}\n")
-                            results_file.flush()  # Ensure data is written to disk
-                    
-                    request_count += 1
-                    print(f"Saved measurement #{measurement_count} to file")
-                    print("-" * 50)
-                    # else:
-                    #     print(f"Packet size mismatch for request ID {request_id}: received {len(received_packet)} bytes, expected {packet_size} bytes")
-                    #     flush_udp_buffer(cloud_data_socket)  # Flush on error
+                        measurement_count += 1
+                        
+                        # Calculate packet reception duration
+                        packet_end_time = time.time()
+                        duration_ms = (packet_end_time - packet_start_time) * 1000
+                        
+                        # Calculate total latency
+                        total_latency_ms = dl_transmission_delay*1000 + duration_ms
+                        
+                        print(f"Packet fully received for request ID {request_id}. Duration: {duration_ms:.2f} ms, Packet size: {packet_size} bytes")
+                        print(f"Total observed latency: {total_latency_ms:.2f} ms")
+                        
+                        # Save results to file with fixed-width format for better alignment
+                        if results_file:
+                            with lock:  # Use lock to avoid file corruption
+                                results_file.write(f"{measurement_count:<6d}  {dl_transmission_delay*1000:<12.2f}  {time_diff_ms:<14.2f}  {duration_ms:<12.2f}  {total_latency_ms:<12.2f}  {packet_size:<10d}  {sync_rtt*1000:<10.2f}\n")
+                                results_file.flush()  # Ensure data is written to disk
+                        
+                        request_count += 1
+                        print(f"Saved measurement #{measurement_count} to file")
+                        print("-" * 50)
+                    else:
+                        print(f"Packet size mismatch for request ID {request_id}: received {len(received_packet)} bytes, expected {packet_size} bytes")
+                        flush_udp_buffer(cloud_data_socket)  # Flush on error
                 else:
                     print(f"Incomplete packet for request ID {request_id}: received {segments_received}/{total_segments} segments")
                     flush_udp_buffer(cloud_data_socket)  # Flush on incomplete segments
