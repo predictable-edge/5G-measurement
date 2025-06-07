@@ -202,7 +202,6 @@ def send_data_to_phone_udp(server_socket, client_address, num_requests, interval
                         segment = struct.pack('!I', request_id) + segment_data
                         # Send segment
                         server_socket.sendto(segment, client_address)
-                        time.sleep(0.0001)  # Sleep for 100 microseconds
                 
                 requests_sent += 1
                 print(f"Sent request {request_id}/{num_requests} to {client_address}: {bytes_per_request} bytes of payload in {total_segments} segments")

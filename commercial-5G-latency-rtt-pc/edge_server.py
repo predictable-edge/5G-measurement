@@ -165,7 +165,7 @@ def send_response(sock, client_address, request_id, response_size):
             # Send the chunk
             sock.sendto(chunk_data, client_address)
             print(f"Sent response chunk {chunk_id+1}/{total_chunks} for request {request_id}")
-            time.sleep(0.0001)  # Sleep for 100 microseconds
+            # time.sleep(0.0001)  # Sleep for 100 microseconds
             
             # Update remaining payload
             remaining_payload -= this_chunk_payload
