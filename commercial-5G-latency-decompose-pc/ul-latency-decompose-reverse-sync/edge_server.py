@@ -203,6 +203,7 @@ def handle_phone_udp_data():
                                     print("======================================================")
                                     print(f"REQUEST {request_id} COMPLETED (NO PAYLOAD)")
                                     print(f"  Final transmission delay: {req_info['transmission_delay']*1000:.2f}ms")
+                                    print(f"  Packet interval (first to last): 0.00ms")
                                     print(f"  PC sync RTT: {req_info['sync_rtt']*1000:.2f}ms")
                                     print("======================================================")
                     
@@ -254,6 +255,10 @@ def handle_phone_udp_data():
                                     total_transfer_time = request['last_segment_time'] - request['header_recv_time']
                                     total_transfer_time_ms = total_transfer_time * 1000
                                     
+                                    # Calculate interval from first packet (header) to last packet (final segment)
+                                    packet_interval = request['last_segment_time'] - request['header_recv_time']
+                                    packet_interval_ms = packet_interval * 1000
+                                    
                                     # Get the RTT used for this request
                                     rtt_ms = request['sync_rtt'] * 1000
                                     
@@ -265,6 +270,7 @@ def handle_phone_udp_data():
                                     print(f"  Header transmission delay: {transmission_delay_ms:.2f}ms")
                                     print(f"  First segment delay: {first_segment_delay_ms:.2f}ms")
                                     print(f"  Total payload transfer time: {total_transfer_time_ms:.2f}ms")
+                                    print(f"  Packet interval (first to last): {packet_interval_ms:.2f}ms")
                                     print(f"  PC sync RTT: {rtt_ms:.2f}ms")
                                     print(f"  Header recv time: {request['header_recv_time']:.6f}s")
                                     print(f"  First segment time: {request.get('first_segment_time', 'N/A')}")
