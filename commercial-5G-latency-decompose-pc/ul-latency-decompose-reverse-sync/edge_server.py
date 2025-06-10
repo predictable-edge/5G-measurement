@@ -169,10 +169,17 @@ def handle_phone_udp_data():
                                 'total_bytes_received': 0
                             }
                         
-                        print(f"Header received from {addr} - Request ID: {request_id}, "
-                              f"Transmission delay: {transmission_delay*1000:.2f}ms, "
-                              f"Expected size: {expected_payload_size} bytes, "
-                              f"Sync RTT: {sync_rtt*1000:.2f}ms")
+                        print("------------------------------------------------------")
+                        print(f"UL DATA HEADER RECEIVED from {addr}")
+                        print(f"  Request ID: {request_id}")
+                        print(f"  Client timestamp: {client_timestamp:.6f}s")
+                        print(f"  PC time offset: {time_offset:.6f}s")
+                        print(f"  Corrected timestamp: {corrected_client_timestamp:.6f}s")
+                        print(f"  Server recv time: {header_recv_time:.6f}s")
+                        print(f"  Transmission delay: {transmission_delay*1000:.2f}ms")
+                        print(f"  Expected payload size: {expected_payload_size} bytes")
+                        print(f"  PC sync RTT: {sync_rtt*1000:.2f}ms")
+                        print("------------------------------------------------------")
                         
                         # If no payload expected, process immediately
                         if expected_payload_size == 0:
@@ -193,7 +200,11 @@ def handle_phone_udp_data():
                                     completed_requests[request_id] = req_info
                                     del pending_requests[request_id]
                                     
-                                    print(f"Request {request_id} completed (no payload)")
+                                    print("======================================================")
+                                    print(f"REQUEST {request_id} COMPLETED (NO PAYLOAD)")
+                                    print(f"  Final transmission delay: {req_info['transmission_delay']*1000:.2f}ms")
+                                    print(f"  PC sync RTT: {req_info['sync_rtt']*1000:.2f}ms")
+                                    print("======================================================")
                     
                     except struct.error as e:
                         print(f"Error parsing header from {addr}: {e}")
@@ -247,15 +258,18 @@ def handle_phone_udp_data():
                                     rtt_ms = request['sync_rtt'] * 1000
                                     
                                     # Print completion info
-                                    print("--------------------------------")
-                                    print(f"Request ID {request_id} completed:")
+                                    print("======================================================")
+                                    print(f"REQUEST {request_id} COMPLETED WITH PAYLOAD")
                                     print(f"  Segments received: {request['segments_received']}")
-                                    print(f"  Total bytes: {request['total_bytes_received']}")
-                                    print(f"  Transmission delay: {transmission_delay_ms:.2f} ms")
-                                    print(f"  First segment delay: {first_segment_delay_ms:.2f} ms")
-                                    print(f"  Total transfer time: {total_transfer_time_ms:.2f} ms")
-                                    print(f"  Sync RTT: {rtt_ms:.2f} ms")
-                                    print("--------------------------------")
+                                    print(f"  Total bytes received: {request['total_bytes_received']}")
+                                    print(f"  Header transmission delay: {transmission_delay_ms:.2f}ms")
+                                    print(f"  First segment delay: {first_segment_delay_ms:.2f}ms")
+                                    print(f"  Total payload transfer time: {total_transfer_time_ms:.2f}ms")
+                                    print(f"  PC sync RTT: {rtt_ms:.2f}ms")
+                                    print(f"  Header recv time: {request['header_recv_time']:.6f}s")
+                                    print(f"  First segment time: {request.get('first_segment_time', 'N/A')}")
+                                    print(f"  Last segment time: {request['last_segment_time']:.6f}s")
+                                    print("======================================================")
                                     
                                     # Save results to file
                                     save_request_result(
