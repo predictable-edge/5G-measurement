@@ -31,7 +31,7 @@ ping_pong_avg_rtt = 0.0           # Average RTT
 ping_pong_count = 0               # Number of ping-pongs completed
 ping_pong_lock = threading.Lock() # Lock for ping-pong stats
 
-def connect_to_cloud_time_server(cloud_server_ip):
+def connect_to_cloud_time_server(cloud_server_ip, wifi_ip=None):
     """Establish TCP connection to cloud server for time synchronization"""
     global cloud_time_socket
     
@@ -41,6 +41,16 @@ def connect_to_cloud_time_server(cloud_server_ip):
             cloud_time_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # Disable Nagle algorithm
             cloud_time_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            
+            # Bind to specific local IP if provided (e.g., wifi interface)
+            if wifi_ip:
+                try:
+                    cloud_time_socket.bind((wifi_ip, 0))  # 0 means any available port
+                    print(f"Time sync socket bound to Wi-Fi IP: {wifi_ip}")
+                except Exception as bind_err:
+                    print(f"Failed to bind time sync socket to {wifi_ip}: {bind_err}")
+                    print("Continuing without binding to specific interface")
+            
             cloud_time_socket.connect((cloud_server_ip, CLOUD_SERVER_IP_PORT))
             print(f"Connected to cloud time server at {cloud_server_ip}:{CLOUD_SERVER_IP_PORT}")
             return
@@ -100,14 +110,14 @@ def listen_for_cloud_sync():
         if not cloud_time_socket and running:
             print("Cloud sync listener exited, will reconnect")
 
-def maintain_cloud_connection(cloud_server_ip):
+def maintain_cloud_connection(cloud_server_ip, wifi_ip=None):
     """Maintain connection to cloud server and handle reconnections"""
     global cloud_time_socket, running
     
     while running:
         if cloud_time_socket is None:
             # Need to connect/reconnect
-            connect_to_cloud_time_server(cloud_server_ip)
+            connect_to_cloud_time_server(cloud_server_ip, wifi_ip)
             
             # Start a new thread to listen for time sync from cloud
             sync_thread = threading.Thread(
@@ -572,7 +582,7 @@ def main():
         # Start thread to maintain cloud server connection for time sync
         cloud_thread = threading.Thread(
             target=maintain_cloud_connection,
-            args=(args.cloud_server_ip,),
+            args=(args.cloud_server_ip, args.wifi_ip),
             daemon=True
         )
         cloud_thread.start()
