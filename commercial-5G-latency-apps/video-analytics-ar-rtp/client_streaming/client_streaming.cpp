@@ -17,7 +17,6 @@
 #include <queue>
 #include <mutex>
 #include <vector>
-#include <filesystem>
 // Added for TCP client
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -26,6 +25,7 @@
 #include <atomic>   // Added for std::atomic
 #include <fcntl.h>  // Added for fcntl and flags
 #include <errno.h>  // Added for errno
+#include <sys/stat.h>  // Added for mkdir
 
 // Include FFmpeg headers
 extern "C" {
@@ -86,6 +86,35 @@ std::map<int, int64_t> frame_timestamps;
 std::map<int, std::vector<Detection>> frame_detections;
 std::mutex detections_mutex;
 
+// Function to create directory recursively (cross-platform)
+bool create_directories_recursive(const std::string& path) {
+    if (path.empty()) return true;
+    
+    // Try to create the directory first
+    if (mkdir(path.c_str(), 0755) == 0) {
+        return true;  // Successfully created
+    }
+    
+    // If it already exists, that's fine
+    if (errno == EEXIST) {
+        return true;
+    }
+    
+    // If parent doesn't exist, try to create parent first
+    if (errno == ENOENT) {
+        size_t pos = path.find_last_of('/');
+        if (pos != std::string::npos && pos > 0) {
+            std::string parent = path.substr(0, pos);
+            if (create_directories_recursive(parent)) {
+                // Try to create this directory again
+                return mkdir(path.c_str(), 0755) == 0 || errno == EEXIST;
+            }
+        }
+    }
+    
+    return false;
+}
+
 // Shared variables for thread synchronization
 std::atomic<bool> all_frames_sent(false);
 std::atomic<int> total_frames_sent(0);
@@ -95,20 +124,24 @@ int max_wait_time_seconds = 10;  // Maximum time to wait after all frames are se
 // Class for handling latency measurements and file output
 class LatencyLogger {
 public:
-    LatencyLogger(const std::string& log_filename) : filename_(log_filename), ofs_(log_filename, std::ios::out) {
-        // Create directory if it doesn't exist
-        std::filesystem::path filepath(filename_);
-        std::filesystem::path parent_path = filepath.parent_path();
-        try {
-            if (!parent_path.empty() && !std::filesystem::exists(parent_path)) {
-                std::filesystem::create_directories(parent_path);
-                std::cout << "Created directories: " << parent_path << std::endl;
+    LatencyLogger(const std::string& log_filename) : filename_(log_filename) {
+        // Extract directory path from filename
+        size_t pos = filename_.find_last_of('/');
+        if (pos != std::string::npos) {
+            std::string dir_path = filename_.substr(0, pos);
+            if (!create_directories_recursive(dir_path)) {
+                std::cerr << "Warning: Failed to create directory " << dir_path 
+                         << ", but continuing anyway." << std::endl;
+            } else {
+                std::cout << "Created directories for: " << dir_path << std::endl;
             }
-        } catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "Filesystem error: " << e.what() << std::endl;
         }
+        
+        // Try to open the file
+        ofs_.open(filename_, std::ios::out);
         if (!ofs_.is_open()) {
-            std::cerr << "Failed to open " << filename_ << " for writing." << std::endl;
+            std::cerr << "Warning: Failed to open " << filename_ << " for writing." << std::endl;
+            std::cerr << "Latency data will not be saved to file, but program will continue." << std::endl;
         } else {
             ofs_ << std::left << std::setw(10) << "Frame"
                  << std::left << std::setw(20) << "E2E latency(ms)"
@@ -135,7 +168,6 @@ public:
         min_latency_ms_ = std::min(min_latency_ms_, latency_ms);
         max_latency_ms_ = std::max(max_latency_ms_, latency_ms);
         
-        // 实时写入文件
         {
             std::lock_guard<std::mutex> lock(file_mutex_);
             if (ofs_.is_open()) {
@@ -170,7 +202,11 @@ public:
             printf("  Average latency: %.2f ms\n", avg_latency);
             printf("  Minimum latency: %.2f ms\n", min_latency_ms_);
             printf("  Maximum latency: %.2f ms\n", max_latency_ms_);
-            printf("  Latency log saved to: %s\n", filename_.c_str());
+            if (ofs_.is_open()) {
+                printf("  Latency log saved to: %s\n", filename_.c_str());
+            } else {
+                printf("  Warning: Latency log could not be saved to: %s\n", filename_.c_str());
+            }
             pthread_mutex_unlock(&cout_mutex);
         }
     }
