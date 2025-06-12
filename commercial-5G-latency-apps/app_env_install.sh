@@ -22,6 +22,8 @@ sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
 sudo apt install -y nvidia-driver-560
 sudo apt install -y cuda-toolkit-12-6
 
+sleep 3
+
 echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
 echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
 source ~/.bashrc
